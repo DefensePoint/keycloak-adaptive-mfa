@@ -1,0 +1,7 @@
+target/
+*.class
+*.jar
+!target/keycloak-adaptive-mfa-*.jar
+.idea/
+*.iml
+.DS_Store

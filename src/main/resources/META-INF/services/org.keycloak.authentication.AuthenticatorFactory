@@ -1,0 +1,7 @@
+org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthAuthenticatorFactory
+org.keycloak.amfa.authenticator.adaptiveauth.ConditionalUserConfiguredAdaptiveAuthAuthenticatorFactory
+org.keycloak.amfa.authenticator.authcontext.AuthContextAuthenticatorFactory
+org.keycloak.amfa.authenticator.amfa.mfa.totp.AmfaTOTPAuthenticatorFactory
+org.keycloak.amfa.authenticator.amfa.mfa.email.AmfaEmailAuthenticatorFactory
+
+org.keycloak.amfa.authenticator.screenresolution.ScreenResolutionAuthenticatorFactory
