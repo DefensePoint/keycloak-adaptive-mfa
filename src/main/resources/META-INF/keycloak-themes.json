@@ -1,0 +1,8 @@
+{
+  "themes": [
+    {
+      "name": "keycloak-amfa",
+      "types": ["login", "email"]
+    }
+  ]
+}
