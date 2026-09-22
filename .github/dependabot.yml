@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package-ecosystem: "maven"
+    directory: "/"
+    target-branch: "development"
+    schedule:
+      interval: "daily"
+    ignore:
+      - dependency-name: "org.keycloak:*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
