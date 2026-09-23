@@ -9,13 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- SECURITY.md, CODE_OF_CONDUCT.md, and CONTRIBUTING.md
-- Unit tests with JUnit 5 and Mockito
-
-## [1.0.0] - 2026-09-22
-
-### Added
-
 - Adaptive authentication authenticator that calls the AMFA engine for risk evaluation
 - Step-up MFA based on risk level (OTP, email code, or deny)
 - Configurable fallback risk level per realm
@@ -24,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Webhook event listener that forwards login events to the engine
 - Email OTP authenticator with configurable code length and TTL
 - User-agent parsing for device and browser detection
+- Unit tests with JUnit 5 and Mockito
+- SECURITY.md, CODE_OF_CONDUCT.md, and CONTRIBUTING.md
 
-[1.0.1]: https://github.com/DefensePoint/keycloak-adaptive-mfa/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/DefensePoint/keycloak-adaptive-mfa/releases/tag/v1.0.0
+[1.0.1]: https://github.com/DefensePoint/keycloak-adaptive-mfa/releases/tag/v1.0.1
