@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable failure mode (mandatory or advisory) when the engine is unreachable
 - Conditional authenticator with configurable comparison operators
 - Webhook event listener that forwards login events to the engine
-- Email OTP authenticator with configurable code length and TTL
+- Email OTP authenticator (6-digit code, 300-second TTL)
 - User-agent parsing for device and browser detection
 - Unit tests with JUnit 5 and Mockito
 - SECURITY.md, CODE_OF_CONDUCT.md, and CONTRIBUTING.md
