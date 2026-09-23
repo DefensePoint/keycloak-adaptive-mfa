@@ -1,3 +1,6 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package org.keycloak.amfa.authenticator.mfa;
 
 import org.junit.jupiter.api.BeforeEach;
