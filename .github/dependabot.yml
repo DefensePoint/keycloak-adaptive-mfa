@@ -4,7 +4,7 @@ updates:
     directory: "/"
     target-branch: "development"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     ignore:
       - dependency-name: "org.keycloak:*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
