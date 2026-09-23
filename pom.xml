@@ -13,12 +13,28 @@
   <description>Adaptive Multi-Factor Authentication Keycloak SPI</description>
   <url>https://github.com/DefensePoint/keycloak-adaptive-mfa</url>
 
+  <organization>
+    <name>DefensePoint Lda.</name>
+    <url>https://defensepoint.com</url>
+  </organization>
+
   <licenses>
     <license>
       <name>Apache License, Version 2.0</name>
       <url>https://www.apache.org/licenses/LICENSE-2.0</url>
     </license>
   </licenses>
+
+  <scm>
+    <connection>scm:git:https://github.com/DefensePoint/keycloak-adaptive-mfa.git</connection>
+    <developerConnection>scm:git:git@github.com:DefensePoint/keycloak-adaptive-mfa.git</developerConnection>
+    <url>https://github.com/DefensePoint/keycloak-adaptive-mfa</url>
+  </scm>
+
+  <issueManagement>
+    <system>GitHub Issues</system>
+    <url>https://github.com/DefensePoint/keycloak-adaptive-mfa/issues</url>
+  </issueManagement>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
