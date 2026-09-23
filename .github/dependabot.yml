@@ -2,7 +2,7 @@ version: 2
 updates:
   - package-ecosystem: "maven"
     directory: "/"
-    target-branch: "development"
+    target-branch: "main"
     schedule:
       interval: "weekly"
     ignore:
