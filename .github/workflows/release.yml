@@ -1,0 +1,61 @@
+name: Release
+
+# Pushing a tag like v1.0.1 builds the JAR from that tag, runs the tests,
+# and publishes a GitHub Release with the JAR and its checksum attached.
+# The asset name is stable across releases (keycloak-adaptive-mfa.jar):
+# the engine repo's compose stack references it by that name, and
+# consumers pin a version through the release tag in the download URL.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release and upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Check tag matches pom version
+        run: |
+          POM_VERSION="$(mvn -B -ntp help:evaluate -Dexpression=project.version -q -DforceStdout)"
+          if [ "v${POM_VERSION}" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match pom.xml version ${POM_VERSION}."
+            echo "Bump the pom version and re-tag."
+            exit 1
+          fi
+
+      - name: Build and unit tests
+        run: mvn -B -ntp verify
+
+      - name: Stage release assets
+        run: |
+          mkdir -p release
+          cp target/keycloak-adaptive-mfa-*.jar release/keycloak-adaptive-mfa.jar
+          cd release
+          sha256sum keycloak-adaptive-mfa.jar > keycloak-adaptive-mfa.jar.sha256
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          KC_VERSION="$(mvn -B -ntp help:evaluate -Dexpression=keycloak.version -q -DforceStdout)"
+          VAVR_VERSION="$(mvn -B -ntp help:evaluate -Dexpression=vavr.version -q -DforceStdout)"
+          NOTES="$(printf '%s\n\n%s\n\n%s' \
+            "Built against Keycloak ${KC_VERSION}." \
+            "The JAR is not shaded: it requires io.vavr:vavr:${VAVR_VERSION} alongside it in /opt/keycloak/providers/. The engine repo's compose stack fetches vavr automatically; standalone installs must place it there too." \
+            "Verify the download with \`sha256sum -c keycloak-adaptive-mfa.jar.sha256\`.")"
+          gh release create "$GITHUB_REF_NAME" \
+            release/keycloak-adaptive-mfa.jar \
+            release/keycloak-adaptive-mfa.jar.sha256 \
+            --verify-tag \
+            --generate-notes \
+            --notes "$NOTES"
