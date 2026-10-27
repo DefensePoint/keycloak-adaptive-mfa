@@ -111,6 +111,7 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         String enteredCode = formData.getFirst("code");
         if (mfaUtils.verifyCode(authSession, enteredCode)) {
             mfaUtils.clearCode(authSession);
+            // This signature exists only in Keycloak 26.6; see README, Compatibility.
             context.getProtector().successfulLogin(
                     context.getRealm(), context.getUser(), context.getConnection(), context.getUriInfo(),
                     authenticationCategory(context));
@@ -149,6 +150,7 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         int attempts = mfaUtils.incrementAttempts(authSession);
 
         if (attempts >= MAX_ATTEMPTS_PER_CODE) {
+            // This signature exists only in Keycloak 26.6; see README, Compatibility.
             context.getProtector().failedLogin(
                     context.getRealm(), context.getUser(), context.getConnection(), context.getUriInfo(),
                     authenticationCategory(context));
