@@ -22,9 +22,7 @@ import org.keycloak.utils.StringUtil;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.util.HashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -35,9 +33,6 @@ public class AuthContextAuthenticator implements Authenticator {
     private static final String URL = "auth_context";
     public static final String ADAPTIVE_AUTH_API = "adaptive-auth-api";
     public static final String AUTH_CONTEXT_HASH = "authContextHash";
-    public static final String CONTEXT_VALUE = "contextValue";
-    public static final String SCREEN_RESOLUTION = "screen_resolution";
-    public static final String CLIENT = "client";
 
     private final KeycloakSession session;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -78,14 +73,6 @@ public class AuthContextAuthenticator implements Authenticator {
                 JsonNode jsonNode = mapper.readTree(responseBody);
                 String hash = jsonNode.path("hash").asText();
 
-                Map<String, String> contextValueAndHash = new HashMap<>();
-                contextValueAndHash.put(AUTH_CONTEXT_HASH, hash);
-                contextValueAndHash.put(SCREEN_RESOLUTION, screenResolution);
-                contextValueAndHash.put(CLIENT, client);
-
-                int lifespanSeconds = 3600; //1 hour
-
-                context.getSession().singleUseObjects().put(CONTEXT_VALUE, lifespanSeconds, contextValueAndHash);
                 context.getAuthenticationSession().setAuthNote(AUTH_CONTEXT_HASH, hash);
                 // Adversarial review finding: hash comes straight out of the
                 // engine's HTTP response, an external system whose output
