@@ -13,6 +13,7 @@ import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.crypto.SignatureSignerContext;
+import org.keycloak.events.Details;
 import org.keycloak.events.Event;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventType;
@@ -21,6 +22,7 @@ import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.UserSessionModel;
 import org.keycloak.urls.UrlType;
 import org.keycloak.services.Urls;
 
@@ -30,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Emits login events to the AMFA engine's {@code /login_event/webhook} so the
@@ -103,7 +106,37 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
             // account-access change and a classic account-takeover vector.
             EventType.FEDERATED_IDENTITY_LINK,
             EventType.IDENTITY_PROVIDER_LINK_ACCOUNT,
-            EventType.REMOVE_FEDERATED_IDENTITY);
+            EventType.REMOVE_FEDERATED_IDENTITY,
+            // A login through an identity provider that fails in the
+            // provider's post login flow, e.g. refused by AMFA's deny tier.
+            // Sent to the engine as LOGIN_ERROR (see engineEventType).
+            EventType.IDENTITY_PROVIDER_POST_LOGIN_ERROR);
+
+    static boolean isForwarded(EventType type) {
+        return FORWARDED_EVENTS.contains(type);
+    }
+
+    /** How long a brokered denial is remembered, comfortably longer than one request. */
+    private static final long POST_LOGIN_ERROR_DEDUP_SECONDS = 60L;
+
+    /**
+     * Keycloak emits one denial of a brokered login twice, identical but for
+     * the event ID, and delivers each copy in its own session to its own
+     * listener instance. Forwarding both made the engine count two failed
+     * logins for one refused attempt, so the first copy claims the login
+     * session (code_id) in Keycloak's single-use store, which is shared across
+     * sessions and cluster nodes and expires on its own. Other events are
+     * never deduplicated.
+     */
+    boolean firstOfItsKind(Event event) {
+        if (event.getType() != EventType.IDENTITY_PROVIDER_POST_LOGIN_ERROR) {
+            return true;
+        }
+        Map<String, String> details = event.getDetails() != null ? event.getDetails() : Map.of();
+        String codeId = details.get(Details.CODE_ID);
+        return codeId == null
+                || session.singleUseObjects().putIfAbsent("amfa.post-login-error." + codeId, POST_LOGIN_ERROR_DEDUP_SECONDS);
+    }
 
     private final KeycloakSession session;
 
@@ -113,7 +146,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
 
     @Override
     public void onEvent(Event event) {
-        if (!FORWARDED_EVENTS.contains(event.getType())) {
+        if (!isForwarded(event.getType()) || !firstOfItsKind(event)) {
             return;
         }
         try {
@@ -169,7 +202,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
      * authContextModel), plus the registered iss/iat/exp/jti claims the verifier
      * checks. Returns null if the realm has no active RS256 signing key.
      */
-    private String buildSignedPayload(RealmModel realm, Event event) {
+    String buildSignedPayload(RealmModel realm, Event event) {
         KeyWrapper key = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
         if (key == null) {
             log.warn("No active RS256 signing key for realm {}; skipping AMFA webhook", realm.getName());
@@ -177,8 +210,12 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         }
 
         Map<String, String> details = event.getDetails() != null ? event.getDetails() : Map.of();
+        Supplier<UserSessionModel> loginSession = brokeredLoginSession(realm, event, details);
 
         String userId = event.getUserId();
+        if (userId == null && isLoginFailure(event.getType())) {
+            userId = scoredUserOf(realm, details);
+        }
         String username = details.get("username");
         String email = null;
         if (userId != null) {
@@ -203,7 +240,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         // sending null made it reject every failed-login event (400) -- which
         // meant failed logins were never recorded and the failure-count hazard
         // escalation could never fire. Coalesce to "" so failures are recorded.
-        data.put("auth_context_hash", nz(details.get(EventBuilderHelper.AUTH_CONTEXT_HASH_DETAIL)));
+        data.put("auth_context_hash", contextValue(details, loginSession, EventBuilderHelper.AUTH_CONTEXT_HASH_DETAIL));
 
         // The engine's AuthContextSchema requires these as non-null strings.
         // A login can legitimately lack a locale (no Accept-Language), screen
@@ -214,9 +251,9 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         Map<String, Object> authContext = new LinkedHashMap<>();
         authContext.put("client", nz(event.getClientId()));
         authContext.put("ip_address", nz(event.getIpAddress()));
-        authContext.put("user_agent", nz(details.get(EventBuilderHelper.USER_AGENT_DETAIL)));
-        authContext.put("system_language", nz(details.get(EventBuilderHelper.LOCALE_DETAIL)));
-        authContext.put("screen_resolution", nz(details.get(EventBuilderHelper.SCREEN_RESOLUTION_DETAIL)));
+        authContext.put("user_agent", contextValue(details, loginSession, EventBuilderHelper.USER_AGENT_DETAIL));
+        authContext.put("system_language", contextValue(details, loginSession, EventBuilderHelper.LOCALE_DETAIL));
+        authContext.put("screen_resolution", contextValue(details, loginSession, EventBuilderHelper.SCREEN_RESOLUTION_DETAIL));
         authContext.put("cookie", null);
 
         long now = Time.currentTime();
@@ -234,7 +271,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         // token cannot be reshaped to claim an event about a different user
         // than the one it was actually issued for.
         claims.put("sub", userId);
-        claims.put("type", event.getType().toString());
+        claims.put("type", engineEventType(event.getType()));
         claims.put("id", event.getId() != null ? event.getId() : UUID.randomUUID().toString());
         claims.put("timestamp", event.getTime());
         claims.put("version", "1");
@@ -243,6 +280,84 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
 
         SignatureSignerContext signer = session.getProvider(SignatureProvider.class, Algorithm.RS256).signer(key);
         return new JWSBuilder().type("JWT").kid(key.getKid()).jsonContent(claims).sign(signer);
+    }
+
+    private static boolean isLoginFailure(EventType type) {
+        return type == EventType.LOGIN_ERROR || type == EventType.IDENTITY_PROVIDER_POST_LOGIN_ERROR;
+    }
+
+    /**
+     * The event type the engine is sent. A login refused in an identity
+     * provider's post login flow is the brokered form of LOGIN_ERROR, and is
+     * sent as one, the type the engine counts as a failed login and closes the
+     * user's open decision with.
+     */
+    private static String engineEventType(EventType type) {
+        return type == EventType.IDENTITY_PROVIDER_POST_LOGIN_ERROR
+                ? EventType.LOGIN_ERROR.toString() : type.toString();
+    }
+
+    /**
+     * The user a failed login belonged to, when Keycloak left it off the event.
+     *
+     * <p>A login refused after AMFA's step ran (AMFA's deny tier) is emitted
+     * without a user ID, as LOGIN_ERROR or, through an identity provider,
+     * IDENTITY_PROVIDER_POST_LOGIN_ERROR, so the engine could not tell whose
+     * attempt was refused. The event keeps the flow's details, and AMFA's step
+     * added the ID of the user it scored. It is set server-side from the
+     * authenticated user, and used only if it still names a user of the realm.
+     */
+    private String scoredUserOf(RealmModel realm, Map<String, String> details) {
+        String id = details.get(EventBuilderHelper.USER_ID_DETAIL);
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        return session.users().getUserById(realm, id) != null ? id : null;
+    }
+
+    /**
+     * The user session whose AMFA notes may fill in a brokered login's context,
+     * read at most once and only when a field needs it.
+     *
+     * <p>A brokered (SSO) login's LOGIN event is emitted by Keycloak's broker
+     * code with a fresh EventBuilder, so it carries only the broker's own
+     * details, none of AMFA's. When the AMFA authenticators ran in the identity
+     * provider's post login flow, in that same request, they also stored their
+     * values as user-session notes. Only that event may use them: a silent
+     * re-login (a session cookie let through without AMFA's steps) or an
+     * account change inside the session did not produce those values, and
+     * inheriting them would report the login's device as its own, which with
+     * a stolen cookie means the victim's browser next to the attacker's IP.
+     */
+    private Supplier<UserSessionModel> brokeredLoginSession(RealmModel realm, Event event, Map<String, String> details) {
+        if (event.getType() != EventType.LOGIN || !details.containsKey(Details.IDENTITY_PROVIDER)
+                || event.getSessionId() == null) {
+            return () -> null;
+        }
+        UserSessionModel[] found = new UserSessionModel[1];
+        boolean[] read = new boolean[1];
+        return () -> {
+            if (!read[0]) {
+                found[0] = session.sessions().getUserSession(realm, event.getSessionId());
+                read[0] = true;
+            }
+            return found[0];
+        };
+    }
+
+    /**
+     * The event detail when present, else the matching AMFA user-session note
+     * (how a brokered login's context survives), else "".
+     */
+    private static String contextValue(Map<String, String> details, Supplier<UserSessionModel> loginSession, String detailKey) {
+        String value = details.get(detailKey);
+        if (value == null || value.isBlank()) {
+            UserSessionModel userSession = loginSession.get();
+            if (userSession != null) {
+                value = userSession.getNote(EventBuilderHelper.userSessionNoteKey(detailKey));
+            }
+        }
+        return nz(value);
     }
 
     /** Null-safe: return "" for a null value so required engine fields never serialize as JSON null. */

@@ -48,6 +48,9 @@
     <commons-lang3.version>3.20.0</commons-lang3.version>
     <junit-jupiter.version>5.11.4</junit-jupiter.version>
     <mockito.version>5.14.2</mockito.version>
+    <!-- Test-only: provides the JAX-RS RuntimeDelegate that
+         org.keycloak.services.Urls needs to build the issuer URI. -->
+    <resteasy.version>6.2.12.Final</resteasy.version>
   </properties>
 
   <dependencies>
@@ -122,6 +125,12 @@
       <groupId>org.mockito</groupId>
       <artifactId>mockito-junit-jupiter</artifactId>
       <version>${mockito.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jboss.resteasy</groupId>
+      <artifactId>resteasy-core</artifactId>
+      <version>${resteasy.version}</version>
       <scope>test</scope>
     </dependency>
 
