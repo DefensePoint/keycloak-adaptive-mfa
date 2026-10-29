@@ -1,10 +1,17 @@
 version: 2
+# Dependabot reads this file from the default branch. Promote through the
+# normal release process after review; merging to development alone is not active.
+# Security updates still use the default branch independently of this group.
 updates:
   - package-ecosystem: "maven"
     directory: "/"
-    target-branch: "main"
+    target-branch: "development"
     schedule:
       interval: "weekly"
+    assignees: ["john-defpt"]
+    groups:
+      dependencies:
+        patterns: ["*"]
     ignore:
       - dependency-name: "org.keycloak:*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
