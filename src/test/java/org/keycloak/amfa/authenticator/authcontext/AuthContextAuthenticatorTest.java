@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -102,5 +103,17 @@ class AuthContextAuthenticatorTest {
         verify(authenticationSession, never()).setAuthNote(eq(AUTH_CONTEXT_HASH), any());
         verify(flowSession, never()).singleUseObjects();
         verify(context).success();
+    }
+
+    @Test
+    void switchedOffSendsNothingToTheEngine() {
+        when(context.getRealm().getAttribute("adaptiveToggle")).thenReturn("false");
+
+        authenticate();
+
+        http.verify(() -> SimpleHttp.doPost(anyString(), any(KeycloakSession.class)), never());
+        serviceAccounts.verify(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()), never());
+        verify(authenticationSession, never()).setAuthNote(eq(AUTH_CONTEXT_HASH), any());
+        verify(context, times(1)).success();
     }
 }

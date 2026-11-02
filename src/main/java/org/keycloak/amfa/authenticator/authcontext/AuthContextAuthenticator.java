@@ -43,6 +43,11 @@ public class AuthContextAuthenticator implements Authenticator {
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
+        // AMFA switched off for the realm: the engine is not sent the context.
+        if (AdaptiveAuthUtils.isSwitchedOff(context.getRealm())) {
+            context.success();
+            return;
+        }
         try {
             String ipAddress = context.getEvent().getEvent().getIpAddress();
             String userAgent = context.getHttpRequest().getHttpHeaders().getRequestHeaders().get("User-Agent").toString();
