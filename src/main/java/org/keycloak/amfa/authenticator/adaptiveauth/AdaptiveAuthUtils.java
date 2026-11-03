@@ -99,8 +99,8 @@ public class AdaptiveAuthUtils {
      * Whether the realm's AMFA switch (the admin page's "Enabled") is off.
      *
      * <p>Only an explicit {@code false} counts. A realm that never saved the admin
-     * page has no {@code adaptiveToggle} attribute, and the admin REST API drops the
-     * attribute map on a full update, so treating a missing value as off would
+     * page has no {@code adaptiveToggle} attribute, and a realm update that sends an
+     * attributes map without it removes it, so treating a missing value as off would
      * silently switch AMFA off for those realms.
      */
     public static boolean isSwitchedOff(RealmModel realm) {
