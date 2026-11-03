@@ -31,8 +31,10 @@ public class AdaptiveAuthAuthenticator implements Authenticator {
     public static final String SCREEN_RESOLUTION = "screen_resolution";
     public static final String LOCAL = "local";
     public static String AUTH_NOTE = "adaptive-auth-risk-level";
-    /** "engine" or "fallback" -- see EventBuilderHelper.DECISION_SOURCE_DETAIL. */
+    /** "engine", "fallback" or "amfa_off" -- see EventBuilderHelper.DECISION_SOURCE_DETAIL. */
     public static String DECISION_SOURCE_NOTE = "adaptive-auth-decision-source";
+    /** The decision source when the realm's AMFA switch is off. */
+    public static final String DECISION_SOURCE_AMFA_OFF = "amfa_off";
 
     protected final AdaptiveAuthUtils adaptiveAuthUtils;
     protected final KeycloakSession session;
@@ -47,6 +49,19 @@ public class AdaptiveAuthAuthenticator implements Authenticator {
         UserModel user = context.getUser();
         if (user == null) {
             context.attempted();
+            return;
+        }
+
+        // AMFA switched off for the realm: the engine is not asked and the login
+        // continues as low risk (level 1, as for a low-risk answer from the
+        // engine), so a step-up set at level 2 or above does not fire. No
+        // risky-login email either.
+        if (AdaptiveAuthUtils.isSwitchedOff(context.getRealm())) {
+            context.getAuthenticationSession().setAuthNote(AUTH_NOTE,
+                    String.valueOf(AdaptiveAuthUtils.MIN_RISK_LEVEL));
+            context.getAuthenticationSession().setAuthNote(DECISION_SOURCE_NOTE, DECISION_SOURCE_AMFA_OFF);
+            EventBuilderHelper.addExtraDetailsToEvent(context.getEvent(), context.getAuthenticationSession());
+            context.success();
             return;
         }
 

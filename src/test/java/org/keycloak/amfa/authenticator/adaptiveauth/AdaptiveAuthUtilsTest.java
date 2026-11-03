@@ -121,4 +121,41 @@ class AdaptiveAuthUtilsTest {
     void isFailureModeMandatory_returnsFalseWhenRealmIsNull() {
         assertFalse(AdaptiveAuthUtils.isFailureModeMandatory(null));
     }
+
+    // --- isSwitchedOff ---
+
+    @Test
+    void isSwitchedOff_returnsTrueForFalse() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("false");
+        assertTrue(AdaptiveAuthUtils.isSwitchedOff(realm));
+    }
+
+    @Test
+    void isSwitchedOff_returnsTrueCaseInsensitive() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(" FALSE ");
+        assertTrue(AdaptiveAuthUtils.isSwitchedOff(realm));
+    }
+
+    @Test
+    void isSwitchedOff_returnsFalseForTrue() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("true");
+        assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
+    }
+
+    @Test
+    void isSwitchedOff_returnsFalseWhenNotSet() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(null);
+        assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
+    }
+
+    @Test
+    void isSwitchedOff_returnsFalseForTypo() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("off");
+        assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
+    }
+
+    @Test
+    void isSwitchedOff_returnsFalseWhenRealmIsNull() {
+        assertFalse(AdaptiveAuthUtils.isSwitchedOff(null));
+    }
 }

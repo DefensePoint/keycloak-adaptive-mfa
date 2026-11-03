@@ -23,7 +23,9 @@ This is one of three repositories that make up the full AMFA system:
 
 | Version | Keycloak |
 |---------|----------|
-| 1.x     | 26.0+    |
+| 1.x     | 26.6     |
+
+**Keycloak versions other than 26.6:** the Email OTP step does not work there yet. `MfaEmailAuthenticator` calls `BruteForceProtector.successfulLogin` and `failedLogin`, whose signatures differ between Keycloak lines: 26.0 to 26.5 take four arguments, 26.6 adds a `String` category, and 26.7 and newer take a `Set<String>` instead. On any line but 26.6, submitting an email code fails with `NoSuchMethodError` (HTTP 500), for local and identity-provider logins alike. Moving the plugin to another Keycloak line requires updating those two calls, and a jar built that way no longer runs on 26.6.
 
 ## Prerequisites
 

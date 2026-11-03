@@ -23,10 +23,11 @@ public class EventBuilderHelper {
     /**
      * "engine" or "fallback" -- whether risk_level on this event is a genuine
      * decision from the engine or the realm's configured fallback because the
-     * engine could not be consulted. Without this, a silently degraded
-     * deployment (engine down, every login proceeding at a fixed fallback
-     * level) is indistinguishable from a healthy one in the Keycloak event log,
-     * so an operator has no signal to alert on.
+     * engine could not be consulted, or "amfa_off" when the realm's AMFA switch
+     * is off and the login continued as low risk without asking the engine.
+     * Without this, a silently degraded deployment (engine down, every login
+     * proceeding at a fixed fallback level) is indistinguishable from a healthy
+     * one in the Keycloak event log, so an operator has no signal to alert on.
      */
     public static final String DECISION_SOURCE_DETAIL = "decision_source";
     /**
