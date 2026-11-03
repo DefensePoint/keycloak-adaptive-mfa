@@ -5,6 +5,8 @@ package org.keycloak.amfa.authenticator.adaptiveauth;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.authentication.AuthenticationFlowContext;
+import org.keycloak.events.EventBuilder;
 import org.keycloak.models.*;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -155,5 +157,37 @@ class AdaptiveAuthAuthenticatorTest {
         when(context.getAuthenticationSession()).thenReturn(null);
         when(context.getClient()).thenReturn(null);
         assertNull(AdaptiveAuthAuthenticator.getRealm(session));
+    }
+
+    // --- authenticate with AMFA switched off ---
+
+    @Mock private AuthenticationFlowContext flowContext;
+    @Mock private UserModel user;
+    @Mock private EventBuilder event;
+    @Mock private AdaptiveAuthUtils adaptiveAuthUtils;
+
+    @Test
+    void authenticate_switchedOff_continuesAsLowRiskWithoutAskingTheEngine() {
+        when(flowContext.getUser()).thenReturn(user);
+        when(flowContext.getRealm()).thenReturn(realm);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("false");
+        when(flowContext.getAuthenticationSession()).thenReturn(authSession);
+        when(flowContext.getEvent()).thenReturn(event);
+        // The event copies every AMFA note; only these two are set when off.
+        lenient().when(authSession.getAuthNote(AdaptiveAuthAuthenticator.AUTH_NOTE)).thenReturn("1");
+        lenient().when(authSession.getAuthNote(AdaptiveAuthAuthenticator.DECISION_SOURCE_NOTE))
+                .thenReturn(AdaptiveAuthAuthenticator.DECISION_SOURCE_AMFA_OFF);
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(flowContext);
+
+        verify(authSession).setAuthNote(AdaptiveAuthAuthenticator.AUTH_NOTE,
+                String.valueOf(AdaptiveAuthUtils.MIN_RISK_LEVEL));
+        verify(authSession).setAuthNote(AdaptiveAuthAuthenticator.DECISION_SOURCE_NOTE,
+                AdaptiveAuthAuthenticator.DECISION_SOURCE_AMFA_OFF);
+        verify(event).detail(AdaptiveAuthAuthenticator.RISK_LEVEL, "1");
+        verify(event).detail("decision_source", AdaptiveAuthAuthenticator.DECISION_SOURCE_AMFA_OFF);
+        verify(flowContext).success();
+        verifyNoInteractions(adaptiveAuthUtils);
+        verify(session, never()).getProvider(any());
     }
 }

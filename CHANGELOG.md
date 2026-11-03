@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Switching AMFA off for a realm (the admin page's "Enabled" switch, realm
+  attribute `adaptiveToggle=false`) now takes effect at login: the engine is
+  sent neither the auth context nor the risk request, and the login continues
+  as low risk (risk level 1, decision
+  source `amfa_off`), so no step-up fires. A realm without the attribute keeps
+  AMFA as before
+
 ## [1.0.1] - 2026-09-22
 
 ### Added
