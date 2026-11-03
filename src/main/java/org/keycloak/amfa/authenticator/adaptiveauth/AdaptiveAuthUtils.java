@@ -95,6 +95,19 @@ public class AdaptiveAuthUtils {
         return level;
     }
 
+    /**
+     * Whether the realm's AMFA switch (the admin page's "Enabled") is off.
+     *
+     * <p>Only an explicit {@code false} counts. A realm that never saved the admin
+     * page has no {@code adaptiveToggle} attribute, and the admin REST API drops the
+     * attribute map on a full update, so treating a missing value as off would
+     * silently switch AMFA off for those realms.
+     */
+    public static boolean isSwitchedOff(RealmModel realm) {
+        String toggle = realm == null ? null : realm.getAttribute(ADAPTIVE_AUTH_TOGGLE);
+        return toggle != null && "false".equalsIgnoreCase(toggle.trim());
+    }
+
     private static String realmSuffix(RealmModel realm) {
         return realm == null ? "" : " in realm " + realm.getName();
     }
