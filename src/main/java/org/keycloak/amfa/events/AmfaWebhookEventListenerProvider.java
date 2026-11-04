@@ -4,6 +4,7 @@
 package org.keycloak.amfa.events;
 
 import lombok.extern.slf4j.Slf4j;
+import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthAuthenticator;
 import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthUtils;
 import org.keycloak.amfa.util.EventBuilderHelper;
 import org.keycloak.broker.provider.util.SimpleHttp;
@@ -23,6 +24,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
+import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.urls.UrlType;
 import org.keycloak.services.Urls;
 
@@ -272,7 +274,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         // than the one it was actually issued for.
         claims.put("sub", userId);
         claims.put("type", engineEventType(event.getType()));
-        claims.put("id", event.getId() != null ? event.getId() : UUID.randomUUID().toString());
+        claims.put("id", webhookId(event));
         claims.put("timestamp", event.getTime());
         claims.put("version", "1");
         claims.put("data", data);
@@ -280,6 +282,30 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
 
         SignatureSignerContext signer = session.getProvider(SignatureProvider.class, Algorithm.RS256).signer(key);
         return new JWSBuilder().type("JWT").kid(key.getKid()).jsonContent(claims).sign(signer);
+    }
+
+    /**
+     * The id the engine stores the event under.
+     *
+     * <p>A LOGIN after AMFA's step is sent under the id of the decision that
+     * scored it, so the engine can link the outcome to that decision even when
+     * it no longer has the decision open: a login slower than the engine's
+     * 5 minute pointer, or one where an earlier LOGIN_ERROR closed it as failed
+     * (Keycloak's own OTP form reports a wrong code that way; AMFA's code steps
+     * do not). Every other event keeps its own id, including such a
+     * LOGIN_ERROR, because the engine rejects a second event with the same id
+     * and would then lose the LOGIN that follows the right code.
+     */
+    private String webhookId(Event event) {
+        if (event.getType() == EventType.LOGIN) {
+            AuthenticationSessionModel authSession = session.getContext().getAuthenticationSession();
+            String decisionId = authSession != null
+                    ? authSession.getAuthNote(AdaptiveAuthAuthenticator.EVENT_ID_NOTE) : null;
+            if (decisionId != null && !decisionId.isBlank()) {
+                return decisionId;
+            }
+        }
+        return event.getId() != null ? event.getId() : UUID.randomUUID().toString();
     }
 
     private static boolean isLoginFailure(EventType type) {

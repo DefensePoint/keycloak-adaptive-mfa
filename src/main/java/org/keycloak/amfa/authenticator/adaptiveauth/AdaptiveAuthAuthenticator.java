@@ -35,6 +35,8 @@ public class AdaptiveAuthAuthenticator implements Authenticator {
     public static String DECISION_SOURCE_NOTE = "adaptive-auth-decision-source";
     /** The decision source when the realm's AMFA switch is off. */
     public static final String DECISION_SOURCE_AMFA_OFF = "amfa_off";
+    /** The id of this login's decision, which the engine also files the login's outcome under. */
+    public static final String EVENT_ID_NOTE = "eventId";
 
     protected final AdaptiveAuthUtils adaptiveAuthUtils;
     protected final KeycloakSession session;
@@ -67,7 +69,7 @@ public class AdaptiveAuthAuthenticator implements Authenticator {
 
         // Generate a new UUID to ensure consistent tracking of the same event across webhook
         String eventId = UUID.randomUUID().toString();
-        context.getAuthenticationSession().setAuthNote("eventId", eventId); // Store eventId as a note
+        context.getAuthenticationSession().setAuthNote(EVENT_ID_NOTE, eventId); // Store eventId as a note
 
         String ipAddress = context.getEvent().getEvent().getIpAddress();
         String userAgent = context.getHttpRequest().getHttpHeaders().getRequestHeaders().get("User-Agent").toString();
