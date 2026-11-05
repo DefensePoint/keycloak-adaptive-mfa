@@ -65,6 +65,18 @@ configured through Keycloak itself:
 | `adaptive-auth-api` client | Clients (confidential, service accounts enabled) | Service account the plugin uses to call the engine |
 | `aud=amfa` audience mapper | On the `adaptive-auth-api` client | Required — the engine enforces the token audience |
 | `frontendUrl` realm attribute | Realm attributes (split-horizon Docker only) | Pins the token issuer to a URL the engine can trust and reach |
+| `AMFA details on login events` required action | Authentication → Required actions → Register | Recommended. Puts the AMFA details on the LOGIN event of a login that ends with a required action, such as TOTP setup or a password change |
+
+Without the `AMFA details on login events` required action, a login that ends
+with a required action reaches the engine without its user agent, screen
+resolution and locale, so the engine records an unknown device for it, and the
+stored LOGIN event has no risk level. With it, the stored LOGIN event of an SSO
+login carries the AMFA details too. Keycloak does not register custom required
+actions by itself, so register it in each realm that uses AMFA. It never shows
+the user a page. Do not make it a default action: like any pending required
+action, it would stop a user from logging in with a direct grant until they log
+in once in a browser. Unregister it before downgrading to a plugin version
+without it, or Keycloak logs a warning on every login.
 
 See the engine repository's `docs/keycloak-setup.md` for step-by-step instructions.
 Email OTP is sent through the realm's standard SMTP settings (Realm Settings → Email) —
