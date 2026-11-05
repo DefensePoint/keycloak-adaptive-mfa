@@ -2,6 +2,8 @@ version: 2
 # Dependabot reads this file from the default branch. Promote through the
 # normal release process after review; merging to development alone is not active.
 # Security updates still use the default branch independently of this group.
+# Keycloak security updates can still open against main: the ignore rule below
+# applies to version updates only, not to security updates.
 updates:
   - package-ecosystem: "maven"
     directory: "/"
