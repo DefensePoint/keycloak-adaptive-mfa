@@ -20,6 +20,7 @@ import io.vavr.control.Either;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.NoCache;
 import org.keycloak.broker.provider.util.SimpleHttp;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
@@ -69,6 +70,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
      */
     @Path("fetchAdaptiveMFAParameters")
     @GET
+    @NoCache
     @Consumes(MediaType.APPLICATION_JSON)
     public Response fetchAdaptiveMFAParameters(@HeaderParam("Authorization") String token)
             throws URISyntaxException, IOException {
@@ -106,6 +108,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
      */
     @Path("updateAdaptiveMFAParameters")
     @POST
+    @NoCache
     @Consumes(MediaType.APPLICATION_JSON)
     public Response updateAdaptiveMFAParameters(@HeaderParam("Authorization") String token, AdaptiveAuthConfig config)
             throws IOException, URISyntaxException {
@@ -144,6 +147,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
     /** Static list of countries used by the geolocation white/blacklist selectors. */
     @Path("countries")
     @GET
+    @NoCache
     @Consumes(MediaType.APPLICATION_JSON)
     public Response getAllCountries() {
         try {
@@ -160,6 +164,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
     /** Realm groups, used to scope per-group parameter sets in the admin UI. */
     @Path("groups")
     @GET
+    @NoCache
     @Consumes(MediaType.APPLICATION_JSON)
     public Response getGroups(@HeaderParam("Authorization") String token) {
         Either<Response, AccessToken> auth = Guards.authenticateRealmAdminRequest(session, token);
@@ -178,6 +183,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
      */
     @Path("fetchScoringConfig")
     @GET
+    @NoCache
     @Consumes(MediaType.APPLICATION_JSON)
     public Response fetchScoringConfig(@HeaderParam("Authorization") String token)
             throws URISyntaxException, IOException {
@@ -213,6 +219,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
      */
     @Path("updateScoringConfig")
     @POST
+    @NoCache
     @Consumes(MediaType.APPLICATION_JSON)
     public Response updateScoringConfig(@HeaderParam("Authorization") String token, ScoringConfigDTO config)
             throws URISyntaxException, IOException {
