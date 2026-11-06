@@ -5,7 +5,8 @@ package org.keycloak.amfa.authenticator.adaptiveauth;
 
 import org.keycloak.amfa.authenticator.adaptiveauth.model.AdaptiveAuthResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.keycloak.broker.provider.util.SimpleHttp;
+import org.keycloak.amfa.util.AmfaHttp;
+import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.KeycloakSession;
 
 import java.io.IOException;
@@ -54,12 +55,10 @@ public class AdaptiveAuthService {
         bodyParams.put("event_id", eventId);
         bodyParams.put("auth_context_hash", authContextHash);
 
-        SimpleHttp.Response httpResponse = SimpleHttp
-                .doPost(url, session)
+        SimpleHttpResponse httpResponse = AmfaHttp
+                .create(session, ENGINE_TIMEOUT_MILLIS)
+                .doPost(url)
                 .auth(token)
-                .connectTimeoutMillis(ENGINE_TIMEOUT_MILLIS)
-                .connectionRequestTimeoutMillis(ENGINE_TIMEOUT_MILLIS)
-                .socketTimeOutMillis(ENGINE_TIMEOUT_MILLIS)
                 .json(bodyParams)
                 .asResponse();
 
