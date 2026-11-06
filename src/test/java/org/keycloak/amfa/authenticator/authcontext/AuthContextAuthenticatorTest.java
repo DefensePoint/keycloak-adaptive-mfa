@@ -7,18 +7,21 @@ import jakarta.ws.rs.core.MultivaluedHashMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.amfa.authenticator.authcontext.model.AuthContextModel;
 import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.broker.provider.util.SimpleHttp;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.mockito.Answers;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.keycloak.amfa.authenticator.authcontext.AuthContextAuthenticator.AUTH_CONTEXT_HASH;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -44,6 +47,7 @@ class AuthContextAuthenticatorTest {
     private AuthenticationFlowContext context;
     private KeycloakSession flowSession;
     private AuthenticationSessionModel authenticationSession;
+    private SimpleHttp request;
     private SimpleHttp.Response response;
 
     @BeforeEach
@@ -51,7 +55,7 @@ class AuthContextAuthenticatorTest {
         serviceAccounts = mockStatic(ServiceAccountService.class);
         serviceAccounts.when(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()))
                 .thenReturn("token");
-        SimpleHttp request = mock(SimpleHttp.class, Answers.RETURNS_SELF);
+        request = mock(SimpleHttp.class, Answers.RETURNS_SELF);
         response = mock(SimpleHttp.Response.class);
         when(request.asResponse()).thenReturn(response);
         http = mockStatic(SimpleHttp.class);
@@ -102,6 +106,21 @@ class AuthContextAuthenticatorTest {
 
         verify(authenticationSession, never()).setAuthNote(eq(AUTH_CONTEXT_HASH), any());
         verify(flowSession, never()).singleUseObjects();
+        verify(context).success();
+    }
+
+    @Test
+    void aRequestWithoutUserAgentStillSendsTheContext() throws Exception {
+        when(context.getHttpRequest().getHttpHeaders().getRequestHeaders()).thenReturn(new MultivaluedHashMap<>());
+        when(response.getStatus()).thenReturn(200);
+        when(response.asString()).thenReturn("{\"hash\":\"abc123\"}");
+
+        authenticate();
+
+        ArgumentCaptor<Object> body = ArgumentCaptor.forClass(Object.class);
+        verify(request).json(body.capture());
+        assertEquals("", ((AuthContextModel) body.getValue()).getUser_agent());
+        verify(authenticationSession).setAuthNote(AUTH_CONTEXT_HASH, "abc123");
         verify(context).success();
     }
 

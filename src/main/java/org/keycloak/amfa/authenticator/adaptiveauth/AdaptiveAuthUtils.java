@@ -6,9 +6,12 @@ package org.keycloak.amfa.authenticator.adaptiveauth;
 import org.keycloak.amfa.authenticator.adaptiveauth.model.AdaptiveAuthResponse;
 import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
 import lombok.extern.slf4j.Slf4j;
+import org.keycloak.http.HttpRequest;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
+
+import java.util.List;
 
 @Slf4j
 public class AdaptiveAuthUtils {
@@ -106,6 +109,16 @@ public class AdaptiveAuthUtils {
     public static boolean isSwitchedOff(RealmModel realm) {
         String toggle = realm == null ? null : realm.getAttribute(ADAPTIVE_AUTH_TOGGLE);
         return toggle != null && "false".equalsIgnoreCase(toggle.trim());
+    }
+
+    /**
+     * The request's User-Agent header in the form sent to the engine, or an empty
+     * string when the request has none. A client may leave the header out, and the
+     * engine requires the field, so a missing header must not become null.
+     */
+    public static String userAgent(HttpRequest request) {
+        List<String> values = request.getHttpHeaders().getRequestHeaders().get("User-Agent");
+        return values == null ? "" : values.toString();
     }
 
     private static String realmSuffix(RealmModel realm) {

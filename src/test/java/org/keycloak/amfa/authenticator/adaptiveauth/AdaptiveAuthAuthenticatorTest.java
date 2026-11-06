@@ -3,17 +3,23 @@
  */
 package org.keycloak.amfa.authenticator.adaptiveauth;
 
+import jakarta.ws.rs.core.MultivaluedHashMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.authentication.AuthenticationFlowContext;
+import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.*;
+import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -189,5 +195,32 @@ class AdaptiveAuthAuthenticatorTest {
         verify(flowContext).success();
         verifyNoInteractions(adaptiveAuthUtils);
         verify(session, never()).getProvider(any());
+    }
+
+    // --- authenticate without a User-Agent header ---
+
+    @Test
+    void authenticate_withoutUserAgent_asksTheEngineWithAnEmptyUserAgent() {
+        AuthenticationFlowContext ctx = mock(AuthenticationFlowContext.class, Answers.RETURNS_DEEP_STUBS);
+        when(ctx.getUser()).thenReturn(user);
+        when(ctx.getRealm()).thenReturn(realm);
+        when(realm.getName()).thenReturn("demo");
+        when(user.getId()).thenReturn("user-1");
+        when(user.getGroupsStream()).thenReturn(Stream.empty());
+        when(ctx.getEvent().getEvent().getIpAddress()).thenReturn("203.0.113.9");
+        when(ctx.getHttpRequest().getHttpHeaders().getRequestHeaders()).thenReturn(new MultivaluedHashMap<>());
+        when(ctx.getHttpRequest().getHttpHeaders().getAcceptableLanguages()).thenReturn(List.of());
+        when(ctx.getAuthenticationSession().getUserSessionNotes()).thenReturn(Map.of());
+        when(ctx.getAuthenticationSession().getClient().getClientId()).thenReturn("web");
+        // Stop right after the engine call: only the request it was given matters here.
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new EngineUnavailableException("stop", null));
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+        verify(adaptiveAuthUtils).getUserAdaptiveAuthDecision(any(), any(), anyInt(), eq("user-1"), eq("web"),
+                eq("203.0.113.9"), eq(""), any(), any(), eq("demo"), any(), any(), any());
+        verify(ctx).failure(AuthenticationFlowError.ACCESS_DENIED);
     }
 }
