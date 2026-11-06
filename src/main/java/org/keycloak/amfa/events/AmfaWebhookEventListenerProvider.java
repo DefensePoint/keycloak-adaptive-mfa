@@ -6,8 +6,8 @@ package org.keycloak.amfa.events;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthAuthenticator;
 import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthUtils;
+import org.keycloak.amfa.util.AmfaHttp;
 import org.keycloak.amfa.util.EventBuilderHelper;
-import org.keycloak.broker.provider.util.SimpleHttp;
 import org.keycloak.common.util.Time;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyUse;
@@ -19,6 +19,7 @@ import org.keycloak.events.Event;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
+import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -167,11 +168,9 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
             }
 
             String url = endpoint.replaceAll("/+$", "") + WEBHOOK_PATH;
-            SimpleHttp.Response response = SimpleHttp.doPost(url, session)
+            SimpleHttpResponse response = AmfaHttp.create(session, WEBHOOK_TIMEOUT_MILLIS)
+                    .doPost(url)
                     .header("SignedPayload", signedPayload)
-                    .connectTimeoutMillis(WEBHOOK_TIMEOUT_MILLIS)
-                    .connectionRequestTimeoutMillis(WEBHOOK_TIMEOUT_MILLIS)
-                    .socketTimeOutMillis(WEBHOOK_TIMEOUT_MILLIS)
                     .json(new HashMap<>())
                     .asResponse();
             if (response.getStatus() >= 300) {

@@ -21,7 +21,8 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.NoCache;
-import org.keycloak.broker.provider.util.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.representations.AccessToken;
@@ -82,8 +83,9 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                 session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
 
         try {
-            SimpleHttp.Response httpResponse = SimpleHttp
-                    .doGet(adaptiveAuthUrl("/settings"), session)
+            SimpleHttpResponse httpResponse = SimpleHttp
+                    .create(session)
+                    .doGet(adaptiveAuthUrl("/settings"))
                     .auth(serviceAccountToken)
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
@@ -125,8 +127,9 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         updatedParameters(parametersNode, extraParameterNode);
 
         try {
-            SimpleHttp.Response httpResponse = SimpleHttp
-                    .doPut(adaptiveAuthUrl("/settings"), session)
+            SimpleHttpResponse httpResponse = SimpleHttp
+                    .create(session)
+                    .doPut(adaptiveAuthUrl("/settings"))
                     .auth(serviceAccountToken)
                     .json(parametersNode)
                     .asResponse();
@@ -195,8 +198,9 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                 session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
 
         try {
-            SimpleHttp.Response httpResponse = SimpleHttp
-                    .doGet(adaptiveAuthUrl("/scoring"), session)
+            SimpleHttpResponse httpResponse = SimpleHttp
+                    .create(session)
+                    .doGet(adaptiveAuthUrl("/scoring"))
                     .auth(serviceAccountToken)
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
@@ -231,8 +235,9 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                 session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
 
         try {
-            SimpleHttp.Response httpResponse = SimpleHttp
-                    .doPut(adaptiveAuthUrl("/scoring"), session)
+            SimpleHttpResponse httpResponse = SimpleHttp
+                    .create(session)
+                    .doPut(adaptiveAuthUrl("/scoring"))
                     .auth(serviceAccountToken)
                     .json(objectMapper.valueToTree(config))
                     .asResponse();

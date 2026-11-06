@@ -7,6 +7,7 @@ package org.keycloak.amfa.authenticator.authcontext;
 import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthUtils;
 import org.keycloak.amfa.authenticator.authcontext.model.AuthContextModel;
 import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
+import org.keycloak.amfa.util.AmfaHttp;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +15,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpStatus;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.Authenticator;
-import org.keycloak.broker.provider.util.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -72,7 +73,7 @@ public class AuthContextAuthenticator implements Authenticator {
             // reason (see org.keycloak.events.log.JBossLoggingEventListenerProvider).
             log.info("AuthContextModel {}", StringUtil.sanitizeSpacesAndQuotes(authContextMap.toString(), null));
 
-            SimpleHttp.Response httpResponse = sendHttpPost(url, token, authContextMap, context.getSession());
+            SimpleHttpResponse httpResponse = sendHttpPost(url, token, authContextMap, context.getSession());
             if (httpResponse != null && httpResponse.getStatus() == HttpStatus.SC_OK) {
                 String responseBody = httpResponse.asString();
                 JsonNode jsonNode = mapper.readTree(responseBody);
@@ -144,12 +145,10 @@ public class AuthContextAuthenticator implements Authenticator {
      * call, because it runs first in the flow, so an unbounded wait here is added to
      * an unbounded wait there.
      */
-    private SimpleHttp.Response sendHttpPost(String url, String token, AuthContextModel model, KeycloakSession session) throws IOException {
-        return SimpleHttp.doPost(url, session)
+    private SimpleHttpResponse sendHttpPost(String url, String token, AuthContextModel model, KeycloakSession session) throws IOException {
+        return AmfaHttp.create(session, ENGINE_TIMEOUT_MILLIS)
+                .doPost(url)
                 .auth(token)
-                .connectTimeoutMillis(ENGINE_TIMEOUT_MILLIS)
-                .connectionRequestTimeoutMillis(ENGINE_TIMEOUT_MILLIS)
-                .socketTimeOutMillis(ENGINE_TIMEOUT_MILLIS)
                 .json(model)
                 .asResponse();
     }
