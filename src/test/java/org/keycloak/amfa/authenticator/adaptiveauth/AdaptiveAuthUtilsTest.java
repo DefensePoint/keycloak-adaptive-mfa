@@ -5,11 +5,15 @@ package org.keycloak.amfa.authenticator.adaptiveauth;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import jakarta.ws.rs.core.MultivaluedHashMap;
+import org.keycloak.http.HttpRequest;
 import org.keycloak.models.RealmModel;
+import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -157,5 +161,25 @@ class AdaptiveAuthUtilsTest {
     @Test
     void isSwitchedOff_returnsFalseWhenRealmIsNull() {
         assertFalse(AdaptiveAuthUtils.isSwitchedOff(null));
+    }
+
+    // --- userAgent ---
+
+    private static HttpRequest requestWithHeaders(MultivaluedHashMap<String, String> headers) {
+        HttpRequest request = mock(HttpRequest.class, Answers.RETURNS_DEEP_STUBS);
+        when(request.getHttpHeaders().getRequestHeaders()).thenReturn(headers);
+        return request;
+    }
+
+    @Test
+    void userAgent_missingHeaderIsEmpty() {
+        assertEquals("", AdaptiveAuthUtils.userAgent(requestWithHeaders(new MultivaluedHashMap<>())));
+    }
+
+    @Test
+    void userAgent_presentHeaderKeepsItsForm() {
+        MultivaluedHashMap<String, String> headers = new MultivaluedHashMap<>();
+        headers.add("User-Agent", "Mozilla/5.0 (Macintosh)");
+        assertEquals(headers.get("User-Agent").toString(), AdaptiveAuthUtils.userAgent(requestWithHeaders(headers)));
     }
 }
