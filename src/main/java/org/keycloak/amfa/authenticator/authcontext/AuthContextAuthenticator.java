@@ -50,7 +50,7 @@ public class AuthContextAuthenticator implements Authenticator {
         }
         try {
             String ipAddress = context.getEvent().getEvent().getIpAddress();
-            String userAgent = context.getHttpRequest().getHttpHeaders().getRequestHeaders().get("User-Agent").toString();
+            String userAgent = AdaptiveAuthUtils.userAgent(context.getHttpRequest());
             // Captured earlier in the flow by the Screen Resolution authenticator
             // (login-page JS -> "screenResolution" user-session note).
             String screenResolution = context.getAuthenticationSession().getUserSessionNotes().get("screenResolution");

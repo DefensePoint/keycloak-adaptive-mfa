@@ -72,7 +72,7 @@ public class AdaptiveAuthAuthenticator implements Authenticator {
         context.getAuthenticationSession().setAuthNote(EVENT_ID_NOTE, eventId); // Store eventId as a note
 
         String ipAddress = context.getEvent().getEvent().getIpAddress();
-        String userAgent = context.getHttpRequest().getHttpHeaders().getRequestHeaders().get("User-Agent").toString();
+        String userAgent = AdaptiveAuthUtils.userAgent(context.getHttpRequest());
         String screenResolution = context.getAuthenticationSession().getUserSessionNotes().get("screenResolution");
         String locales = context.getHttpRequest().getHttpHeaders().getAcceptableLanguages()
                 .stream().filter(locale -> !locale.getCountry().isEmpty())
