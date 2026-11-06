@@ -9,8 +9,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.amfa.authenticator.authcontext.model.AuthContextModel;
 import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
+import org.keycloak.amfa.util.AmfaHttp;
 import org.keycloak.authentication.AuthenticationFlowContext;
-import org.keycloak.broker.provider.util.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttpRequest;
+import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.mockito.Answers;
@@ -24,6 +27,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.keycloak.amfa.authenticator.authcontext.AuthContextAuthenticator.AUTH_CONTEXT_HASH;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -43,23 +47,25 @@ import static org.mockito.Mockito.when;
 class AuthContextAuthenticatorTest {
 
     private MockedStatic<ServiceAccountService> serviceAccounts;
-    private MockedStatic<SimpleHttp> http;
+    private MockedStatic<AmfaHttp> http;
     private AuthenticationFlowContext context;
     private KeycloakSession flowSession;
     private AuthenticationSessionModel authenticationSession;
-    private SimpleHttp request;
-    private SimpleHttp.Response response;
+    private SimpleHttpRequest request;
+    private SimpleHttpResponse response;
 
     @BeforeEach
     void setUp() throws Exception {
         serviceAccounts = mockStatic(ServiceAccountService.class);
         serviceAccounts.when(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()))
                 .thenReturn("token");
-        request = mock(SimpleHttp.class, Answers.RETURNS_SELF);
-        response = mock(SimpleHttp.Response.class);
+        request = mock(SimpleHttpRequest.class, Answers.RETURNS_SELF);
+        response = mock(SimpleHttpResponse.class);
         when(request.asResponse()).thenReturn(response);
-        http = mockStatic(SimpleHttp.class);
-        http.when(() -> SimpleHttp.doPost(anyString(), any(KeycloakSession.class))).thenReturn(request);
+        SimpleHttp client = mock(SimpleHttp.class);
+        when(client.doPost(anyString())).thenReturn(request);
+        http = mockStatic(AmfaHttp.class);
+        http.when(() -> AmfaHttp.create(any(KeycloakSession.class), anyInt())).thenReturn(client);
 
         context = mock(AuthenticationFlowContext.class, Answers.RETURNS_DEEP_STUBS);
         flowSession = mock(KeycloakSession.class, Answers.RETURNS_DEEP_STUBS);
@@ -130,7 +136,7 @@ class AuthContextAuthenticatorTest {
 
         authenticate();
 
-        http.verify(() -> SimpleHttp.doPost(anyString(), any(KeycloakSession.class)), never());
+        http.verify(() -> AmfaHttp.create(any(KeycloakSession.class), anyInt()), never());
         serviceAccounts.verify(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()), never());
         verify(authenticationSession, never()).setAuthNote(eq(AUTH_CONTEXT_HASH), any());
         verify(context, times(1)).success();

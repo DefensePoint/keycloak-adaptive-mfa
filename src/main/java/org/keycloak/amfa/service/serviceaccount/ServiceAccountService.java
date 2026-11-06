@@ -5,7 +5,8 @@ package org.keycloak.amfa.service.serviceaccount;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.jboss.logging.Logger;
-import org.keycloak.broker.provider.util.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -41,7 +42,8 @@ public class ServiceAccountService {
             String tokenEndpoint = baseUri + "realms/" + realm.getName()
                     + "/protocol/openid-connect/token";
 
-            SimpleHttp.Response response = SimpleHttp.doPost(tokenEndpoint, session)
+            SimpleHttpResponse response = SimpleHttp.create(session)
+                    .doPost(tokenEndpoint)
                     .param("grant_type", "client_credentials")
                     .param("client_id", clientId)
                     .param("client_secret", clientSecret)
