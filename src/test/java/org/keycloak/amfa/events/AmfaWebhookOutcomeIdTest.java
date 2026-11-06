@@ -75,6 +75,11 @@ class AmfaWebhookOutcomeIdTest {
     @Mock
     AuthenticationSessionModel authSession;
 
+    @Mock
+
+    AmfaWebhookSender sender;
+
+
     AmfaWebhookEventListenerProvider provider;
 
     @BeforeEach
@@ -103,7 +108,7 @@ class AmfaWebhookOutcomeIdTest {
         when(context.getAuthenticationSession()).thenReturn(authSession);
         when(authSession.getAuthNote(AdaptiveAuthAuthenticator.EVENT_ID_NOTE)).thenReturn(DECISION_ID);
 
-        provider = new AmfaWebhookEventListenerProvider(session);
+        provider = new AmfaWebhookEventListenerProvider(session, sender);
     }
 
     private Event event(EventType type, Map<String, String> details) {

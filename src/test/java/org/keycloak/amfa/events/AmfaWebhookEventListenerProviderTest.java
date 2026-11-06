@@ -76,6 +76,11 @@ class AmfaWebhookEventListenerProviderTest {
     @Mock
     UserSessionModel userSession;
 
+    @Mock
+
+    AmfaWebhookSender sender;
+
+
     AmfaWebhookEventListenerProvider provider;
 
     @BeforeEach
@@ -100,7 +105,7 @@ class AmfaWebhookEventListenerProviderTest {
         when(session.sessions()).thenReturn(sessions);
         when(realm.getName()).thenReturn("test-amfa");
 
-        provider = new AmfaWebhookEventListenerProvider(session);
+        provider = new AmfaWebhookEventListenerProvider(session, sender);
     }
 
     private Event loginEvent(Map<String, String> details, String sessionId) {
