@@ -12,6 +12,7 @@ import org.keycloak.amfa.rest.model.ScoringConfigDTO;
 import org.keycloak.amfa.service.Guards;
 import org.keycloak.amfa.service.AmfaApiService;
 import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
+import org.keycloak.amfa.util.AmfaHttp;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -21,7 +22,6 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.NoCache;
-import org.keycloak.http.simple.SimpleHttp;
 import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
@@ -44,6 +44,16 @@ public class AmfaResourceProvider implements RealmResourceProvider {
 
     public static final String COUNTRY_NAME_ARRAY = "countryNameArray";
     private static final String ADAPTIVE_AUTH_API_CLIENT_ID = "adaptive-auth-api";
+
+    /**
+     * How long the settings and scoring calls wait on the engine. Keycloak's
+     * client sets no connect timeout, so an engine address that drops packets
+     * held the admin page for about 75s, and only its 5s default bounded the
+     * read. Now both end in the same "engine unreachable" error. Longer than
+     * the 5s of the login calls, as nobody waits at a login prompt here and a
+     * save can take longer than a read.
+     */
+    private static final int ENGINE_TIMEOUT_MILLIS = 10000;
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final Map<String, String> countryNameToCodeMap = loadCountryMap();
 
@@ -83,8 +93,8 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                 session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
 
         try {
-            SimpleHttpResponse httpResponse = SimpleHttp
-                    .create(session)
+            SimpleHttpResponse httpResponse = AmfaHttp
+                    .create(session, ENGINE_TIMEOUT_MILLIS)
                     .doGet(adaptiveAuthUrl("/settings"))
                     .auth(serviceAccountToken)
                     .asResponse();
@@ -127,8 +137,8 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         updatedParameters(parametersNode, extraParameterNode);
 
         try {
-            SimpleHttpResponse httpResponse = SimpleHttp
-                    .create(session)
+            SimpleHttpResponse httpResponse = AmfaHttp
+                    .create(session, ENGINE_TIMEOUT_MILLIS)
                     .doPut(adaptiveAuthUrl("/settings"))
                     .auth(serviceAccountToken)
                     .json(parametersNode)
@@ -198,8 +208,8 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                 session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
 
         try {
-            SimpleHttpResponse httpResponse = SimpleHttp
-                    .create(session)
+            SimpleHttpResponse httpResponse = AmfaHttp
+                    .create(session, ENGINE_TIMEOUT_MILLIS)
                     .doGet(adaptiveAuthUrl("/scoring"))
                     .auth(serviceAccountToken)
                     .asResponse();
@@ -235,8 +245,8 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                 session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
 
         try {
-            SimpleHttpResponse httpResponse = SimpleHttp
-                    .create(session)
+            SimpleHttpResponse httpResponse = AmfaHttp
+                    .create(session, ENGINE_TIMEOUT_MILLIS)
                     .doPut(adaptiveAuthUrl("/scoring"))
                     .auth(serviceAccountToken)
                     .json(objectMapper.valueToTree(config))
