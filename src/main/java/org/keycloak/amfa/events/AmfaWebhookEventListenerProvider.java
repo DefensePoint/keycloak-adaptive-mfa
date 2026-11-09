@@ -166,7 +166,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
             }
 
             long signedAt = Time.currentTime();
-            String signedPayload = buildSignedPayload(realm, event);
+            String signedPayload = buildSignedPayload(realm, event, signedAt);
             if (signedPayload == null) {
                 return;
             }
@@ -248,6 +248,15 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
      * checks. Returns null if the realm has no active RS256 signing key.
      */
     String buildSignedPayload(RealmModel realm, Event event) {
+        return buildSignedPayload(realm, event, Time.currentTime());
+    }
+
+    /**
+     * As {@link #buildSignedPayload(RealmModel, Event)}, signed at {@code signedAt}:
+     * the token's iat, with exp {@code TOKEN_LIFETIME_SECONDS} later. The sender
+     * drops a webhook still waiting at that same exp.
+     */
+    String buildSignedPayload(RealmModel realm, Event event, long signedAt) {
         KeyWrapper key = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
         if (key == null) {
             log.warn("No active RS256 signing key for realm {}; skipping AMFA webhook", realm.getName());
@@ -301,13 +310,12 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         authContext.put("screen_resolution", contextValue(details, loginSession, EventBuilderHelper.SCREEN_RESOLUTION_DETAIL));
         authContext.put("cookie", null);
 
-        long now = Time.currentTime();
         String issuer = Urls.realmIssuer(session.getContext().getUri(UrlType.FRONTEND).getBaseUri(), realm.getName());
 
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("iss", issuer);
-        claims.put("iat", now);
-        claims.put("exp", now + TOKEN_LIFETIME_SECONDS);
+        claims.put("iat", signedAt);
+        claims.put("exp", signedAt + TOKEN_LIFETIME_SECONDS);
         claims.put("jti", UUID.randomUUID().toString());
         claims.put("aud", WEBHOOK_AUDIENCE);
         // The real Keycloak user this event is about, set server-side from the

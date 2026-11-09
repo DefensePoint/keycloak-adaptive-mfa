@@ -207,6 +207,14 @@ class AmfaWebhookEventListenerProviderTest {
     }
 
     @Test
+    void theTokenIsIssuedAtTheGivenSigningTime() {
+        JsonObject payload = payloadOf(provider.buildSignedPayload(realm, loginEvent(Map.of(), null), 1_800_000_000L));
+
+        assertEquals(1_800_000_000L, payload.get("iat").getAsLong());
+        assertEquals(1_800_000_000L + 30, payload.get("exp").getAsLong());
+    }
+
+    @Test
     void noDetailsAndNoSessionStillSendsEmptyStrings() {
         JsonObject payload = payloadOf(provider.buildSignedPayload(realm, loginEvent(Map.of(), null)));
 
