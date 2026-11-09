@@ -19,6 +19,7 @@ import org.keycloak.events.Event;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
+import org.keycloak.http.simple.SimpleHttp;
 import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
@@ -46,7 +47,9 @@ import java.util.function.Supplier;
  * {@code SignedPayload} header, which is exactly what the engine's webhook
  * verifier expects (signature via the realm JWKS, issuer + replay checks). The
  * listener is inert on realms that have not enabled AMFA, and never blocks or
- * fails a login: webhook delivery is best-effort and all errors are swallowed.
+ * fails a login: the event is signed on the login thread, while the session is
+ * still open, and sent from {@link AmfaWebhookSender} in the background.
+ * Delivery is best-effort and all errors are swallowed.
  */
 @Slf4j
 public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
@@ -88,12 +91,10 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
     /**
      * How long to wait when delivering an event, before giving up on it.
      *
-     * <p>The catch below already keeps a failed delivery from changing the login
-     * outcome, but without a timeout it could not keep a *slow* one from delaying it:
-     * this call is synchronous on the login thread. Measured against an engine that
-     * drops packets, the final step of a login sat here for 75 seconds after the
-     * decision call had already fallen back, so the login was held long after the risk
-     * question had been answered. Same 5s budget as the two engine calls.
+     * <p>Delivery runs in the background, so this no longer holds up the login,
+     * but it still bounds how long one webhook occupies its lane: measured against
+     * an engine that drops packets, an unbounded call sat for 75 seconds. Same 5s
+     * budget as the two engine calls.
      */
     private static final int WEBHOOK_TIMEOUT_MILLIS = 5000;
 
@@ -142,9 +143,11 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
     }
 
     private final KeycloakSession session;
+    private final AmfaWebhookSender sender;
 
-    public AmfaWebhookEventListenerProvider(KeycloakSession session) {
+    public AmfaWebhookEventListenerProvider(KeycloakSession session, AmfaWebhookSender sender) {
         this.session = session;
+        this.sender = sender;
     }
 
     @Override
@@ -162,26 +165,67 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
                 return;
             }
 
-            String signedPayload = buildSignedPayload(realm, event);
+            long signedAt = Time.currentTime();
+            String signedPayload = buildSignedPayload(realm, event, signedAt);
             if (signedPayload == null) {
                 return;
             }
 
             String url = endpoint.replaceAll("/+$", "") + WEBHOOK_PATH;
-            SimpleHttpResponse response = AmfaHttp.create(session, WEBHOOK_TIMEOUT_MILLIS)
-                    .doPost(url)
-                    .header("SignedPayload", signedPayload)
-                    .json(new HashMap<>())
-                    .asResponse();
-            if (response.getStatus() >= 300) {
-                log.warn("AMFA webhook returned HTTP {} for event {} (realm {})",
-                        response.getStatus(), event.getType(), realm.getName());
+            SimpleHttp http = AmfaHttp.createDetached(session, WEBHOOK_TIMEOUT_MILLIS);
+            EventType type = event.getType();
+            String realmName = realm.getName();
+            boolean queued = sender.submit(laneKey(event),
+                    () -> deliver(http, url, signedPayload, signedAt + TOKEN_LIFETIME_SECONDS, type, realmName));
+            if (!queued) {
+                log.warn("AMFA webhook dropped for event {} (realm {}): the send queue is full",
+                        type, realmName);
             }
         } catch (Exception e) {
             // Never let webhook delivery affect the login outcome.
             log.warn("AMFA webhook delivery failed for event {}: {}",
                     event.getType(), e.getMessage());
         }
+    }
+
+    /**
+     * Send one signed event. Runs on a sender lane, after the session may have
+     * closed, so it touches nothing but its arguments. A webhook that waited past
+     * its token's expiry is not sent: the engine would refuse it.
+     */
+    static void deliver(SimpleHttp http, String url, String signedPayload, long expiresAt,
+                        EventType type, String realmName) {
+        if (Time.currentTime() >= expiresAt) {
+            log.warn("AMFA webhook dropped for event {} (realm {}): it waited past its token's expiry",
+                    type, realmName);
+            return;
+        }
+        try {
+            SimpleHttpResponse response = http.doPost(url)
+                    .header("SignedPayload", signedPayload)
+                    .json(new HashMap<>())
+                    .asResponse();
+            if (response.getStatus() >= 300) {
+                log.warn("AMFA webhook returned HTTP {} for event {} (realm {})",
+                        response.getStatus(), type, realmName);
+            }
+        } catch (Exception e) {
+            log.warn("AMFA webhook delivery failed for event {}: {}", type, e.getMessage());
+        }
+    }
+
+    /**
+     * The lane an event is sent on: the user it is about, so one user's events
+     * keep their order. A refused login that Keycloak emitted without a user
+     * goes by the user AMFA scored.
+     */
+    private static String laneKey(Event event) {
+        if (event.getUserId() != null) {
+            return event.getUserId();
+        }
+        Map<String, String> details = event.getDetails() != null ? event.getDetails() : Map.of();
+        String scored = details.get(EventBuilderHelper.USER_ID_DETAIL);
+        return scored != null ? scored : event.getRealmId();
     }
 
     @Override
@@ -204,6 +248,15 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
      * checks. Returns null if the realm has no active RS256 signing key.
      */
     String buildSignedPayload(RealmModel realm, Event event) {
+        return buildSignedPayload(realm, event, Time.currentTime());
+    }
+
+    /**
+     * As {@link #buildSignedPayload(RealmModel, Event)}, signed at {@code signedAt}:
+     * the token's iat, with exp {@code TOKEN_LIFETIME_SECONDS} later. The sender
+     * drops a webhook still waiting at that same exp.
+     */
+    String buildSignedPayload(RealmModel realm, Event event, long signedAt) {
         KeyWrapper key = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
         if (key == null) {
             log.warn("No active RS256 signing key for realm {}; skipping AMFA webhook", realm.getName());
@@ -257,13 +310,12 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         authContext.put("screen_resolution", contextValue(details, loginSession, EventBuilderHelper.SCREEN_RESOLUTION_DETAIL));
         authContext.put("cookie", null);
 
-        long now = Time.currentTime();
         String issuer = Urls.realmIssuer(session.getContext().getUri(UrlType.FRONTEND).getBaseUri(), realm.getName());
 
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("iss", issuer);
-        claims.put("iat", now);
-        claims.put("exp", now + TOKEN_LIFETIME_SECONDS);
+        claims.put("iat", signedAt);
+        claims.put("exp", signedAt + TOKEN_LIFETIME_SECONDS);
         claims.put("jti", UUID.randomUUID().toString());
         claims.put("aud", WEBHOOK_AUDIENCE);
         // The real Keycloak user this event is about, set server-side from the

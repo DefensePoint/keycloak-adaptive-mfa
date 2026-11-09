@@ -76,6 +76,11 @@ class AmfaWebhookEventListenerProviderTest {
     @Mock
     UserSessionModel userSession;
 
+    @Mock
+
+    AmfaWebhookSender sender;
+
+
     AmfaWebhookEventListenerProvider provider;
 
     @BeforeEach
@@ -100,7 +105,7 @@ class AmfaWebhookEventListenerProviderTest {
         when(session.sessions()).thenReturn(sessions);
         when(realm.getName()).thenReturn("test-amfa");
 
-        provider = new AmfaWebhookEventListenerProvider(session);
+        provider = new AmfaWebhookEventListenerProvider(session, sender);
     }
 
     private Event loginEvent(Map<String, String> details, String sessionId) {
@@ -199,6 +204,14 @@ class AmfaWebhookEventListenerProviderTest {
         assertEquals("", ctx.get("user_agent").getAsString());
         assertEquals("", ctx.get("screen_resolution").getAsString());
         verify(sessions, never()).getUserSession(any(), any());
+    }
+
+    @Test
+    void theTokenIsIssuedAtTheGivenSigningTime() {
+        JsonObject payload = payloadOf(provider.buildSignedPayload(realm, loginEvent(Map.of(), null), 1_800_000_000L));
+
+        assertEquals(1_800_000_000L, payload.get("iat").getAsLong());
+        assertEquals(1_800_000_000L + 30, payload.get("exp").getAsLong());
     }
 
     @Test

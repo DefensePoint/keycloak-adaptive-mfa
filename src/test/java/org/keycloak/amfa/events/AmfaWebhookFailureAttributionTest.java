@@ -75,6 +75,11 @@ class AmfaWebhookFailureAttributionTest {
     @Mock
     org.keycloak.models.SingleUseObjectProvider singleUse;
 
+    @Mock
+
+    AmfaWebhookSender sender;
+
+
     AmfaWebhookEventListenerProvider provider;
 
     @BeforeEach
@@ -102,7 +107,7 @@ class AmfaWebhookFailureAttributionTest {
         when(singleUse.putIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong()))
                 .thenAnswer(inv -> used.add(inv.getArgument(0)));
 
-        provider = new AmfaWebhookEventListenerProvider(session);
+        provider = new AmfaWebhookEventListenerProvider(session, sender);
     }
 
     private void user(String id, String username) {
@@ -149,7 +154,7 @@ class AmfaWebhookFailureAttributionTest {
         Event first = event(EventType.IDENTITY_PROVIDER_POST_LOGIN_ERROR, null, Map.of("code_id", "c-1"));
         Event duplicate = event(EventType.IDENTITY_PROVIDER_POST_LOGIN_ERROR, null, Map.of("code_id", "c-1"));
         Event otherLogin = event(EventType.IDENTITY_PROVIDER_POST_LOGIN_ERROR, null, Map.of("code_id", "c-2"));
-        AmfaWebhookEventListenerProvider secondInstance = new AmfaWebhookEventListenerProvider(session);
+        AmfaWebhookEventListenerProvider secondInstance = new AmfaWebhookEventListenerProvider(session, sender);
 
         assertTrue(provider.firstOfItsKind(first));
         org.junit.jupiter.api.Assertions.assertFalse(secondInstance.firstOfItsKind(duplicate));
