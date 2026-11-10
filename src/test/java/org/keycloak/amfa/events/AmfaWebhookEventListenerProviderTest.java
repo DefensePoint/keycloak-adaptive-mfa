@@ -77,7 +77,6 @@ class AmfaWebhookEventListenerProviderTest {
     UserSessionModel userSession;
 
     @Mock
-
     AmfaWebhookSender sender;
 
 

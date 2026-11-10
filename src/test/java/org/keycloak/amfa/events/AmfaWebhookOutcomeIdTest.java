@@ -76,7 +76,6 @@ class AmfaWebhookOutcomeIdTest {
     AuthenticationSessionModel authSession;
 
     @Mock
-
     AmfaWebhookSender sender;
 
 
