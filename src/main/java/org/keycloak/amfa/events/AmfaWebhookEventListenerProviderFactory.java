@@ -27,8 +27,13 @@ public class AmfaWebhookEventListenerProviderFactory implements EventListenerPro
 
     /**
      * Webhooks each lane holds while the engine is slow or down. A webhook's
-     * token expires 30 seconds after the login, so a deeper queue would only
-     * hold webhooks the engine refuses anyway.
+     * token expires 30 seconds after the login, so a lane can only deliver as
+     * many as the engine answers in that time: 250 at 120 ms per webhook, but
+     * about 6 from an engine that does not answer within the 5 second timeout.
+     * The rest then wait past their expiry and are dropped with a warning that
+     * says so, next to the timed out deliveries. A smaller queue would not
+     * help that case, and would drop webhooks a healthy engine still has time
+     * for when many logins arrive at once.
      */
     private static final int SENDER_QUEUE_PER_LANE = 250;
 

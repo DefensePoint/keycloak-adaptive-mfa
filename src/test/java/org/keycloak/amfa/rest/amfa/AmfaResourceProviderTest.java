@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthUtils;
 import org.keycloak.amfa.rest.model.AdaptiveAuthConfig;
+import org.keycloak.amfa.rest.model.ErrorResponse;
 import org.keycloak.amfa.rest.model.ScoringConfigDTO;
 import org.keycloak.amfa.service.AmfaApiService;
 import org.keycloak.amfa.service.Guards;
@@ -41,7 +42,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -185,8 +185,7 @@ class AmfaResourceProviderTest {
                 resource.fetchScoringConfig("Bearer admin"),
                 resource.updateScoringConfig("Bearer admin", new ScoringConfigDTO("weighted", null, List.of(0.3))))) {
             assertEquals(502, response.getStatus());
-            assertTrue(String.valueOf(response.getEntity()).contains("AMFA engine unreachable: Read timed out"),
-                    String.valueOf(response.getEntity()));
+            assertEquals("AMFA engine unreachable: Read timed out", ((ErrorResponse) response.getEntity()).getError());
         }
     }
 }
