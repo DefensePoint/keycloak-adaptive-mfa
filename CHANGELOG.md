@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A realm without the `adaptiveToggle` attribute is on only when it has an
   engine endpoint (`adaptiveAuthEndpoint`), as a realm set up through the
   admin REST API has; a realm never set up for AMFA, master included, is now
-  off, and its logins no longer ask the engine. A set switch decides as
-  before, and only `true` is on. The risk request, the auth context and the
+  off, and its logins no longer ask the engine. The exception is a realm
+  without a switch in `mandatory` failure mode: it stays on, so a missing
+  endpoint still denies its logins instead of letting them through as low
+  risk. A set switch decides as before, and only `true` is on. The risk request, the auth context and the
   login webhook all follow this rule, so a realm with an endpoint but no
   switch now also sends the login webhook. Upgrade the admin UI with it: the
   admin UI release that reads the switch the same way shows these realms as

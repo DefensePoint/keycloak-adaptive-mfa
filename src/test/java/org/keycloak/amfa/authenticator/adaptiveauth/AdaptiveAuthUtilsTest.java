@@ -183,6 +183,27 @@ class AdaptiveAuthUtilsTest {
     }
 
     @Test
+    void isSwitchedOn_noSwitchAndNoEndpointIsOnInMandatoryFailureMode() {
+        switchAndEndpoint(null, null);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn("mandatory");
+        assertTrue(AdaptiveAuthUtils.isSwitchedOn(realm));
+    }
+
+    @Test
+    void isSwitchedOn_switchedOffIsOffInMandatoryFailureModeToo() {
+        switchAndEndpoint("false", null);
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn("mandatory");
+        assertFalse(AdaptiveAuthUtils.isSwitchedOn(realm));
+    }
+
+    @Test
+    void isSwitchedOn_noSwitchAndNoEndpointIsOffInAdvisoryFailureMode() {
+        switchAndEndpoint(null, null);
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn("advisory");
+        assertFalse(AdaptiveAuthUtils.isSwitchedOn(realm));
+    }
+
+    @Test
     void isSwitchedOn_falseWhenRealmIsNull() {
         assertFalse(AdaptiveAuthUtils.isSwitchedOn(null));
     }

@@ -213,6 +213,27 @@ class AdaptiveAuthAuthenticatorTest {
     }
 
     @Test
+    void authenticate_noSwitchAndNoEndpointInMandatoryFailureMode_isDenied() {
+        // Mandatory failure mode chose to deny when AMFA cannot decide, so a realm
+        // without a switch keeps AMFA on, and the missing endpoint denies the login.
+        AuthenticationFlowContext ctx = mock(AuthenticationFlowContext.class, Answers.RETURNS_DEEP_STUBS);
+        when(ctx.getUser()).thenReturn(user);
+        when(ctx.getRealm()).thenReturn(realm);
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn("mandatory");
+        when(user.getGroupsStream()).thenReturn(Stream.empty());
+        when(ctx.getHttpRequest().getHttpHeaders().getRequestHeaders()).thenReturn(new MultivaluedHashMap<>());
+        when(ctx.getHttpRequest().getHttpHeaders().getAcceptableLanguages()).thenReturn(List.of());
+        when(ctx.getAuthenticationSession().getUserSessionNotes()).thenReturn(Map.of());
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new EngineUnavailableException("no endpoint", null));
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+        verify(ctx).failure(AuthenticationFlowError.ACCESS_DENIED);
+    }
+
+    @Test
     void authenticate_noSwitchButAnEndpoint_asksTheEngine() {
         AuthenticationFlowContext ctx = mock(AuthenticationFlowContext.class, Answers.RETURNS_DEEP_STUBS);
         when(ctx.getUser()).thenReturn(user);

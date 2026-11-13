@@ -104,8 +104,10 @@ public class AdaptiveAuthUtils {
      * <p>A set switch decides: only {@code true} is on. A realm without one is on
      * only when it has an engine endpoint, as a realm set up through the admin REST
      * API rather than the page has, so it stays risk-checked; a realm never set up
-     * for AMFA, master included, is off. The admin page reads the switch the same
-     * way.
+     * for AMFA, master included, is off. The one exception is a realm without a
+     * switch that chose {@link #FAILURE_MODE_MANDATORY mandatory} failure mode: it
+     * stays on, so a missing endpoint still denies the login instead of letting it
+     * through as low risk. The admin page reads the switch the same way.
      */
     public static boolean isSwitchedOn(RealmModel realm) {
         if (realm == null) {
@@ -114,7 +116,7 @@ public class AdaptiveAuthUtils {
         String toggle = realm.getAttribute(ADAPTIVE_AUTH_TOGGLE);
         if (toggle == null || toggle.isBlank()) {
             String endpoint = realm.getAttribute(ADAPTIVE_AUTH_ENDPOINT);
-            return endpoint != null && !endpoint.isBlank();
+            return (endpoint != null && !endpoint.isBlank()) || isFailureModeMandatory(realm);
         }
         return "true".equalsIgnoreCase(toggle.trim());
     }
