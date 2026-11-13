@@ -58,7 +58,7 @@ public class AdaptiveAuthAuthenticator implements Authenticator {
         // continues as low risk (level 1, as for a low-risk answer from the
         // engine), so a step-up set at level 2 or above does not fire. No
         // risky-login email either.
-        if (AdaptiveAuthUtils.isSwitchedOff(context.getRealm())) {
+        if (!AdaptiveAuthUtils.isSwitchedOn(context.getRealm())) {
             context.getAuthenticationSession().setAuthNote(AUTH_NOTE,
                     String.valueOf(AdaptiveAuthUtils.MIN_RISK_LEVEL));
             context.getAuthenticationSession().setAuthNote(DECISION_SOURCE_NOTE, DECISION_SOURCE_AMFA_OFF);

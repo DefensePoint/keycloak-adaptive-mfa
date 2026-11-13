@@ -8,6 +8,8 @@ import com.google.gson.JsonParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthUtils;
+import org.keycloak.amfa.util.AmfaHttp;
 import org.keycloak.amfa.util.EventBuilderHelper;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.AsymmetricSignatureSignerContext;
@@ -16,16 +18,19 @@ import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.events.Event;
 import org.keycloak.events.EventType;
+import org.keycloak.http.simple.SimpleHttp;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakUriInfo;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.RealmProvider;
 import org.keycloak.models.UserProvider;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.UserSessionProvider;
 import org.keycloak.urls.UrlType;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -40,7 +45,11 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -222,5 +231,46 @@ class AmfaWebhookEventListenerProviderTest {
         assertEquals("", ctx.get("system_language").getAsString());
         assertEquals("", ctx.get("screen_resolution").getAsString());
         assertEquals("", payload.getAsJsonObject("data").get("auth_context_hash").getAsString());
+    }
+
+    // --- which realms get the webhook: the same switch as the login ---
+
+    private boolean sendsLoginWebhook(String toggle, String endpoint) {
+        RealmProvider realms = mock(RealmProvider.class);
+        when(session.realms()).thenReturn(realms);
+        when(realms.getRealm("realm-id")).thenReturn(realm);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(toggle);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT)).thenReturn(endpoint);
+        when(sender.submit(anyString(), any())).thenReturn(true);
+        try (MockedStatic<AmfaHttp> http = mockStatic(AmfaHttp.class)) {
+            http.when(() -> AmfaHttp.createDetached(any(), anyInt())).thenReturn(mock(SimpleHttp.class));
+            provider.onEvent(loginEvent(Map.of(), null));
+        }
+        try {
+            verify(sender).submit(anyString(), any());
+            return true;
+        } catch (AssertionError notSent) {
+            return false;
+        }
+    }
+
+    @Test
+    void switchedOnRealmGetsTheWebhook() {
+        assertEquals(true, sendsLoginWebhook("true", "http://engine.test"));
+    }
+
+    @Test
+    void realmWithAnEndpointButNoSwitchGetsTheWebhook() {
+        assertEquals(true, sendsLoginWebhook(null, "http://engine.test"));
+    }
+
+    @Test
+    void switchedOffRealmGetsNoWebhook() {
+        assertEquals(false, sendsLoginWebhook("false", "http://engine.test"));
+    }
+
+    @Test
+    void realmWithNeitherSwitchNorEndpointGetsNoWebhook() {
+        assertEquals(false, sendsLoginWebhook(null, null));
     }
 }
