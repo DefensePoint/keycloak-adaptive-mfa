@@ -210,6 +210,24 @@ class AmfaWebhookBackgroundSendTest {
     }
 
     @Test
+    void aRealmWithAnEndpointButNoSwitchSendsItsLogins() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(null);
+
+        provider.onEvent(event(EventType.LOGIN, "user-1", Map.of()));
+
+        queuedFor("user-1");
+    }
+
+    @Test
+    void aRealmSwitchedOffSendsNothing() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("false");
+
+        provider.onEvent(event(EventType.LOGIN, "user-1", Map.of()));
+
+        verifyNoInteractions(sender);
+    }
+
+    @Test
     void anEventAmfaDoesNotForwardIsNotQueued() {
         provider.onEvent(event(EventType.CODE_TO_TOKEN, "user-1", Map.of()));
 

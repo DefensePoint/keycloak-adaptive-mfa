@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -126,41 +127,67 @@ class AdaptiveAuthUtilsTest {
         assertFalse(AdaptiveAuthUtils.isFailureModeMandatory(null));
     }
 
-    // --- isSwitchedOff ---
+    // --- isSwitchedOn ---
 
-    @Test
-    void isSwitchedOff_returnsTrueForFalse() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("false");
-        assertTrue(AdaptiveAuthUtils.isSwitchedOff(realm));
+    private void switchAndEndpoint(String toggle, String endpoint) {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(toggle);
+        // Read only when the switch is not set.
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT)).thenReturn(endpoint);
     }
 
     @Test
-    void isSwitchedOff_returnsTrueCaseInsensitive() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(" FALSE ");
-        assertTrue(AdaptiveAuthUtils.isSwitchedOff(realm));
+    void isSwitchedOn_trueWhenSwitchIsTrue() {
+        switchAndEndpoint(" TRUE ", null);
+        assertTrue(AdaptiveAuthUtils.isSwitchedOn(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsFalseForTrue() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("true");
-        assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
+    void isSwitchedOn_falseWhenSwitchIsFalseEvenWithEndpoint() {
+        switchAndEndpoint("false", "http://engine.test");
+        assertFalse(AdaptiveAuthUtils.isSwitchedOn(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsFalseWhenNotSet() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(null);
-        assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
+    void isSwitchedOn_falseForAnyOtherSwitchValue() {
+        switchAndEndpoint("yes", "http://engine.test");
+        assertFalse(AdaptiveAuthUtils.isSwitchedOn(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsFalseForTypo() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("off");
-        assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
+    void isSwitchedOn_withoutSwitch_trueWhenEndpointIsSet() {
+        switchAndEndpoint(null, "http://engine.test");
+        assertTrue(AdaptiveAuthUtils.isSwitchedOn(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsFalseWhenRealmIsNull() {
-        assertFalse(AdaptiveAuthUtils.isSwitchedOff(null));
+    void isSwitchedOn_withBlankSwitch_trueWhenEndpointIsSet() {
+        switchAndEndpoint(" ", "http://engine.test");
+        assertTrue(AdaptiveAuthUtils.isSwitchedOn(realm));
+    }
+
+    @Test
+    void isSwitchedOn_withoutSwitch_falseWithoutEndpoint() {
+        switchAndEndpoint(null, " ");
+        assertFalse(AdaptiveAuthUtils.isSwitchedOn(realm));
+    }
+
+    @Test
+    void isSwitchedOn_withoutSwitchOrEndpoint_trueInMandatoryFailureMode() {
+        switchAndEndpoint(null, null);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn("mandatory");
+        assertTrue(AdaptiveAuthUtils.isSwitchedOn(realm));
+    }
+
+    @Test
+    void isSwitchedOn_switchedOffInMandatoryFailureMode_isOff() {
+        switchAndEndpoint("false", null);
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn("mandatory");
+        assertFalse(AdaptiveAuthUtils.isSwitchedOn(realm));
+    }
+
+    @Test
+    void isSwitchedOn_falseWhenRealmIsNull() {
+        assertFalse(AdaptiveAuthUtils.isSwitchedOn(null));
     }
 
     // --- userAgent ---

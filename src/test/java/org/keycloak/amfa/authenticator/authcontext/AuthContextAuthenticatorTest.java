@@ -7,6 +7,7 @@ import jakarta.ws.rs.core.MultivaluedHashMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthUtils;
 import org.keycloak.amfa.authenticator.authcontext.model.AuthContextModel;
 import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
 import org.keycloak.amfa.util.AmfaHttp;
@@ -80,6 +81,7 @@ class AuthContextAuthenticatorTest {
         when(authenticationSession.getUserSessionNotes()).thenReturn(Map.of("screenResolution", "1920x1080"));
         when(authenticationSession.getClient().getClientId()).thenReturn("web");
         when(flowSession.getContext().getRealm().getAttribute(anyString())).thenReturn("http://engine.test");
+        when(context.getRealm().getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT)).thenReturn("http://engine.test");
     }
 
     @AfterEach
