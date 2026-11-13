@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The events of a login AMFA scored carry an `amfa_event_id` detail: the ID of
+  the engine's decision, which the login webhook also reports the LOGIN under.
+  A monitoring tool that reads both Keycloak's events and the engine's records
+  can then join a LOGIN to the engine's record of it and show the login once
+  instead of twice. An SSO login's LOGIN event carries it when the
+  `amfa-login-event-details` required action is registered, as for the other
+  AMFA details
+
 ### Fixed
 
 - Switching AMFA off for a realm (the admin page's "Enabled" switch, realm
