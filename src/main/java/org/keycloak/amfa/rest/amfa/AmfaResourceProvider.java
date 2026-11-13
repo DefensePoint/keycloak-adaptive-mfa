@@ -11,6 +11,7 @@ import org.keycloak.amfa.rest.model.ErrorResponse;
 import org.keycloak.amfa.rest.model.ScoringConfigDTO;
 import org.keycloak.amfa.service.Guards;
 import org.keycloak.amfa.service.AmfaApiService;
+import org.keycloak.amfa.service.serviceaccount.ServiceAccountNotConfiguredException;
 import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
 import org.keycloak.amfa.util.AmfaHttp;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,17 +22,22 @@ import io.vavr.control.Either;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.apache.http.conn.ConnectTimeoutException;
 import org.jboss.resteasy.reactive.NoCache;
 import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.services.resource.RealmResourceProvider;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -89,14 +95,14 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         Either<Response, AccessToken> auth = Guards.authenticateRealmAdminRequest(session, token);
         if (auth.isLeft()) return auth.getLeft();
 
-        String serviceAccountToken = ServiceAccountService.getServiceAccountToken(
-                session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
+        Either<Response, String> serviceAccountToken = engineToken("fetchAdaptiveMFAParameters");
+        if (serviceAccountToken.isLeft()) return serviceAccountToken.getLeft();
 
         try {
             SimpleHttpResponse httpResponse = AmfaHttp
                     .create(session, ENGINE_TIMEOUT_MILLIS)
                     .doGet(adaptiveAuthUrl("/settings"))
-                    .auth(serviceAccountToken)
+                    .auth(serviceAccountToken.get())
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
                 log.error("fetchAdaptiveMFAParameters: httpResponse={}", httpResponse);
@@ -108,7 +114,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         } catch (IOException e) {
             log.error("fetchAdaptiveMFAParameters: AMFA engine unreachable", e);
             return createErrorResponse(Response.Status.BAD_GATEWAY,
-                    "AMFA engine unreachable: " + e.getMessage());
+                    "AMFA engine unreachable: " + unreachableReason(e, ENGINE_TIMEOUT_MILLIS));
         }
     }
 
@@ -128,8 +134,8 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         Either<Response, AccessToken> auth = Guards.authenticateRealmAdminRequest(session, token);
         if (auth.isLeft()) return auth.getLeft();
 
-        String serviceAccountToken = ServiceAccountService.getServiceAccountToken(
-                session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
+        Either<Response, String> serviceAccountToken = engineToken("updateAdaptiveMFAParameters");
+        if (serviceAccountToken.isLeft()) return serviceAccountToken.getLeft();
 
         List<AdaptiveAuthConfigParameter> parameters = config.getParameters();
         JsonNode parametersNode = objectMapper.valueToTree(parameters);
@@ -140,7 +146,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
             SimpleHttpResponse httpResponse = AmfaHttp
                     .create(session, ENGINE_TIMEOUT_MILLIS)
                     .doPut(adaptiveAuthUrl("/settings"))
-                    .auth(serviceAccountToken)
+                    .auth(serviceAccountToken.get())
                     .json(parametersNode)
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
@@ -153,7 +159,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         } catch (IOException e) {
             log.error("updateAdaptiveMFAParameters: AMFA engine unreachable", e);
             return createErrorResponse(Response.Status.BAD_GATEWAY,
-                    "AMFA engine unreachable: " + e.getMessage());
+                    "AMFA engine unreachable: " + unreachableReason(e, ENGINE_TIMEOUT_MILLIS));
         }
     }
 
@@ -204,14 +210,14 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         Either<Response, AccessToken> auth = Guards.authenticateRealmAdminRequest(session, token);
         if (auth.isLeft()) return auth.getLeft();
 
-        String serviceAccountToken = ServiceAccountService.getServiceAccountToken(
-                session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
+        Either<Response, String> serviceAccountToken = engineToken("fetchScoringConfig");
+        if (serviceAccountToken.isLeft()) return serviceAccountToken.getLeft();
 
         try {
             SimpleHttpResponse httpResponse = AmfaHttp
                     .create(session, ENGINE_TIMEOUT_MILLIS)
                     .doGet(adaptiveAuthUrl("/scoring"))
-                    .auth(serviceAccountToken)
+                    .auth(serviceAccountToken.get())
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
                 log.error("fetchScoringConfig: httpResponse={}", httpResponse);
@@ -223,7 +229,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         } catch (IOException e) {
             log.error("fetchScoringConfig: AMFA engine unreachable", e);
             return createErrorResponse(Response.Status.BAD_GATEWAY,
-                    "AMFA engine unreachable: " + e.getMessage());
+                    "AMFA engine unreachable: " + unreachableReason(e, ENGINE_TIMEOUT_MILLIS));
         }
     }
 
@@ -241,14 +247,14 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         Either<Response, AccessToken> auth = Guards.authenticateRealmAdminRequest(session, token);
         if (auth.isLeft()) return auth.getLeft();
 
-        String serviceAccountToken = ServiceAccountService.getServiceAccountToken(
-                session.getContext().getRealm(), session, ADAPTIVE_AUTH_API_CLIENT_ID);
+        Either<Response, String> serviceAccountToken = engineToken("updateScoringConfig");
+        if (serviceAccountToken.isLeft()) return serviceAccountToken.getLeft();
 
         try {
             SimpleHttpResponse httpResponse = AmfaHttp
                     .create(session, ENGINE_TIMEOUT_MILLIS)
                     .doPut(adaptiveAuthUrl("/scoring"))
-                    .auth(serviceAccountToken)
+                    .auth(serviceAccountToken.get())
                     .json(objectMapper.valueToTree(config))
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
@@ -261,8 +267,61 @@ public class AmfaResourceProvider implements RealmResourceProvider {
         } catch (IOException e) {
             log.error("updateScoringConfig: AMFA engine unreachable", e);
             return createErrorResponse(Response.Status.BAD_GATEWAY,
-                    "AMFA engine unreachable: " + e.getMessage());
+                    "AMFA engine unreachable: " + unreachableReason(e, ENGINE_TIMEOUT_MILLIS));
         }
+    }
+
+    /**
+     * The adaptive-auth-api token for an engine call, or the answer to give instead.
+     *
+     * <p>A realm without an engine endpoint, or without that client or its secret, is
+     * not set up for AMFA: it gets a 409 saying what is missing. A token request that
+     * fails gets a 502 with the reason. Before, the engine was called without a token,
+     * or at a URL with no host, and the page only learned that the engine answered 401
+     * or could not be reached.
+     */
+    private Either<Response, String> engineToken(String operation) {
+        RealmModel realm = session.getContext().getRealm();
+        String endpoint = realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT);
+        if (endpoint == null || endpoint.isBlank()) {
+            return Either.left(notSetUp(operation, realm, "no AMFA engine endpoint is set"));
+        }
+        try {
+            return Either.right(ServiceAccountService.requestServiceAccountToken(
+                    realm, session, ADAPTIVE_AUTH_API_CLIENT_ID));
+        } catch (ServiceAccountNotConfiguredException e) {
+            return Either.left(notSetUp(operation, realm, e.getMessage()));
+        } catch (IOException e) {
+            log.error("{}: could not get a token for the {} client", operation, ADAPTIVE_AUTH_API_CLIENT_ID, e);
+            return Either.left(createErrorResponse(Response.Status.BAD_GATEWAY,
+                    "Could not get a token for the " + ADAPTIVE_AUTH_API_CLIENT_ID + " client: "
+                            + unreachableReason(e, ServiceAccountService.TOKEN_TIMEOUT_MILLIS)));
+        }
+    }
+
+    private Response notSetUp(String operation, RealmModel realm, String reason) {
+        log.warn("{}: Adaptive MFA is not set up for realm {}: {}", operation, realm.getName(), reason);
+        return createErrorResponse(Response.Status.CONFLICT, "Adaptive MFA is not set up for this realm: " + reason);
+    }
+
+    /**
+     * Why a call failed, in words an admin can act on. Java's own message for a host
+     * it cannot resolve is only the host name, and a timeout's does not say how long
+     * was waited.
+     */
+    static String unreachableReason(IOException e, int timeoutMillis) {
+        String message = e.getMessage() == null ? "" : e.getMessage();
+        if (e instanceof UnknownHostException) {
+            int colon = message.indexOf(':');
+            return "unknown host '" + (colon < 0 ? message : message.substring(0, colon)).trim() + "'";
+        }
+        if (e instanceof ConnectTimeoutException || e instanceof SocketTimeoutException) {
+            return "no answer within " + timeoutMillis / 1000 + " seconds (" + message + ")";
+        }
+        if (e instanceof ConnectException) {
+            return "connection failed (" + message + ")";
+        }
+        return message.isBlank() ? e.getClass().getSimpleName() : message;
     }
 
     private String adaptiveAuthUrl(String suffix) {
