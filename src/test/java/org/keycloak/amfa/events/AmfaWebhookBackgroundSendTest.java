@@ -184,6 +184,20 @@ class AmfaWebhookBackgroundSendTest {
     }
 
     @Test
+    void refusedLoginsWithoutAnyUserEachGoByTheirOwnId() {
+        Event first = event(EventType.LOGIN_ERROR, null, Map.of());
+        first.setId("event-1");
+        Event second = event(EventType.LOGIN_ERROR, null, Map.of());
+        second.setId("event-2");
+
+        provider.onEvent(first);
+        provider.onEvent(second);
+
+        verify(sender).submit(eq("event-1"), any());
+        verify(sender).submit(eq("event-2"), any());
+    }
+
+    @Test
     void aFullQueueDropsTheWebhookWithoutFailingTheLogin() throws Exception {
         when(sender.submit(any(), any())).thenReturn(false);
 
