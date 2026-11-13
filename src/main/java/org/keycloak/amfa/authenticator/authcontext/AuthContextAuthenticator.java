@@ -45,7 +45,7 @@ public class AuthContextAuthenticator implements Authenticator {
     @Override
     public void authenticate(AuthenticationFlowContext context) {
         // AMFA switched off for the realm: the engine is not sent the context.
-        if (AdaptiveAuthUtils.isSwitchedOff(context.getRealm())) {
+        if (!AdaptiveAuthUtils.isSwitchedOn(context.getRealm())) {
             context.success();
             return;
         }

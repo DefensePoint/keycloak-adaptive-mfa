@@ -15,10 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as low risk (risk level 1, decision source `amfa_off`). That is the level a
   low-risk answer from the engine gives, so a step-up set at level 2 or above
   does not fire, while a flow branch for level 1 (`EQUAL` or `LESS_OR_EQUAL`)
-  runs for every login. A realm without the attribute keeps AMFA as before.
-  While AMFA is off the engine records no logins either (the login webhook was
-  already off), so after switching back on its history-based signals, such as
-  inactive account, do not count the logins made in between
+  runs for every login. While AMFA is off the engine records no logins
+  either (the login webhook was already off), so after switching back on its
+  history-based signals, such as inactive account, do not count the logins
+  made in between
+
+### Changed
+
+- A realm without the `adaptiveToggle` attribute is on only when it has an
+  engine endpoint (`adaptiveAuthEndpoint`), as a realm set up through the
+  admin REST API has; a realm never set up for AMFA, master included, is now
+  off, and its logins no longer ask the engine. A set switch decides as
+  before, and only `true` is on. The risk request, the auth context and the
+  login webhook all follow this rule, so a realm with an endpoint but no
+  switch now also sends the login webhook. Upgrade the admin UI with it: the
+  admin UI release that reads the switch the same way shows these realms as
+  they are treated at login
 
 ## [1.0.1] - 2026-09-22
 

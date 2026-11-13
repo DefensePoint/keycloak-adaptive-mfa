@@ -80,6 +80,7 @@ class AuthContextAuthenticatorTest {
         when(authenticationSession.getUserSessionNotes()).thenReturn(Map.of("screenResolution", "1920x1080"));
         when(authenticationSession.getClient().getClientId()).thenReturn("web");
         when(flowSession.getContext().getRealm().getAttribute(anyString())).thenReturn("http://engine.test");
+        when(context.getRealm().getAttribute("adaptiveToggle")).thenReturn("true");
     }
 
     @AfterEach
@@ -139,6 +140,32 @@ class AuthContextAuthenticatorTest {
         http.verify(() -> AmfaHttp.create(any(KeycloakSession.class), anyInt()), never());
         serviceAccounts.verify(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()), never());
         verify(authenticationSession, never()).setAuthNote(eq(AUTH_CONTEXT_HASH), any());
+        verify(context, times(1)).success();
+    }
+
+    @Test
+    void noSwitchAndNoEndpointSendsNothingToTheEngine() {
+        when(context.getRealm().getAttribute("adaptiveToggle")).thenReturn(null);
+        when(context.getRealm().getAttribute("adaptiveAuthEndpoint")).thenReturn(null);
+
+        authenticate();
+
+        http.verify(() -> AmfaHttp.create(any(KeycloakSession.class), anyInt()), never());
+        serviceAccounts.verify(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()), never());
+        verify(context, times(1)).success();
+    }
+
+    @Test
+    void noSwitchButAnEndpointSendsTheContext() throws Exception {
+        when(context.getRealm().getAttribute("adaptiveToggle")).thenReturn(null);
+        when(context.getRealm().getAttribute("adaptiveAuthEndpoint")).thenReturn("http://engine.test");
+        when(response.getStatus()).thenReturn(200);
+        when(response.asString()).thenReturn("{\"hash\":\"abc123\"}");
+
+        authenticate();
+
+        serviceAccounts.verify(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()));
+        verify(authenticationSession).setAuthNote(AUTH_CONTEXT_HASH, "abc123");
         verify(context, times(1)).success();
     }
 }

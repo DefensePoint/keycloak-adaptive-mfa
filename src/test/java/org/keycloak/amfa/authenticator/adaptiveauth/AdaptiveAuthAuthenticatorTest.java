@@ -197,6 +197,46 @@ class AdaptiveAuthAuthenticatorTest {
         verify(session, never()).getProvider(any());
     }
 
+    @Test
+    void authenticate_noSwitchAndNoEndpoint_isOffAndAsksTheEngineNothing() {
+        when(flowContext.getUser()).thenReturn(user);
+        when(flowContext.getRealm()).thenReturn(realm);
+        when(flowContext.getAuthenticationSession()).thenReturn(authSession);
+        when(flowContext.getEvent()).thenReturn(event);
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(flowContext);
+
+        verify(authSession).setAuthNote(AdaptiveAuthAuthenticator.DECISION_SOURCE_NOTE,
+                AdaptiveAuthAuthenticator.DECISION_SOURCE_AMFA_OFF);
+        verify(flowContext).success();
+        verifyNoInteractions(adaptiveAuthUtils);
+    }
+
+    @Test
+    void authenticate_noSwitchButAnEndpoint_asksTheEngine() {
+        AuthenticationFlowContext ctx = mock(AuthenticationFlowContext.class, Answers.RETURNS_DEEP_STUBS);
+        when(ctx.getUser()).thenReturn(user);
+        when(ctx.getRealm()).thenReturn(realm);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(null);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT)).thenReturn("http://engine.test");
+        when(realm.getName()).thenReturn("demo");
+        when(user.getId()).thenReturn("user-1");
+        when(user.getGroupsStream()).thenReturn(Stream.empty());
+        when(ctx.getEvent().getEvent().getIpAddress()).thenReturn("203.0.113.9");
+        when(ctx.getHttpRequest().getHttpHeaders().getRequestHeaders()).thenReturn(new MultivaluedHashMap<>());
+        when(ctx.getHttpRequest().getHttpHeaders().getAcceptableLanguages()).thenReturn(List.of());
+        when(ctx.getAuthenticationSession().getUserSessionNotes()).thenReturn(Map.of());
+        when(ctx.getAuthenticationSession().getClient().getClientId()).thenReturn("web");
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new EngineUnavailableException("stop", null));
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+        verify(adaptiveAuthUtils).getUserAdaptiveAuthDecision(any(), any(), anyInt(), eq("user-1"), eq("web"),
+                any(), any(), any(), any(), eq("demo"), any(), any(), any());
+    }
+
     // --- authenticate without a User-Agent header ---
 
     @Test
@@ -204,6 +244,7 @@ class AdaptiveAuthAuthenticatorTest {
         AuthenticationFlowContext ctx = mock(AuthenticationFlowContext.class, Answers.RETURNS_DEEP_STUBS);
         when(ctx.getUser()).thenReturn(user);
         when(ctx.getRealm()).thenReturn(realm);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("true");
         when(realm.getName()).thenReturn("demo");
         when(user.getId()).thenReturn("user-1");
         when(user.getGroupsStream()).thenReturn(Stream.empty());
