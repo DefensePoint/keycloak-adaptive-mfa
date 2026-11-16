@@ -82,6 +82,13 @@ See the engine repository's `docs/keycloak-setup.md` for step-by-step instructio
 Email OTP is sent through the realm's standard SMTP settings (Realm Settings → Email) —
 no additional configuration is required.
 
+One login gets at most three email codes by default: the first one and two more, each from
+**Resend**, from a code expiring (after 5 minutes), or after three wrong guesses.
+Reloading the page shows the code already sent and sends nothing. At the limit the user
+sees "Too many codes were requested for this sign-in" and starts the login again. To
+allow more, open the email step's settings (the gear on the execution) and set
+**Codes per login**.
+
 ## Building from Source
 
 ```bash

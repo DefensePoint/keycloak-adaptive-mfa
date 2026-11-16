@@ -26,6 +26,12 @@ public class MfaUtils {
      */
     public static final String AUTH_NOTE_OTP_ISSUED_AT = "amfa-otp-issued-at";
 
+    /**
+     * How many codes this login has sent. Unlike the notes above it survives
+     * {@link #clearCode}, so it counts every code the login was sent.
+     */
+    public static final String AUTH_NOTE_OTP_SENT = "amfa-otp-sent";
+
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public String generateCode() {
@@ -72,6 +78,23 @@ public class MfaUtils {
 
     public int getAttempts(AuthenticationSessionModel authSession) {
         String raw = authSession.getAuthNote(AUTH_NOTE_OTP_ATTEMPTS);
+        if (raw == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /** Counts one more code sent to this login. */
+    public void countSent(AuthenticationSessionModel authSession) {
+        authSession.setAuthNote(AUTH_NOTE_OTP_SENT, Integer.toString(getSentCount(authSession) + 1));
+    }
+
+    public int getSentCount(AuthenticationSessionModel authSession) {
+        String raw = authSession.getAuthNote(AUTH_NOTE_OTP_SENT);
         if (raw == null) {
             return 0;
         }
