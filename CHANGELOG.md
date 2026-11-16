@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The AMFA TOTP step refuses a code, even the right one, while the realm's
+  brute-force protection has the account locked out. Before, wrong codes on
+  this step locked the account, but the right code still logged it in and
+  cleared the lockout, so the lockout did not stop a code-guessing run. As on
+  Keycloak's own OTP form, a locked-out account is told "Invalid authenticator
+  code", which does not reveal the lockout, and the refusal is not counted as
+  another failed login. The email code step already had this check
+
 - Switching AMFA off for a realm (the admin page's "Enabled" switch, realm
   attribute `adaptiveToggle=false`) now takes effect at login: the engine is
   sent neither the auth context nor the risk request, and the login continues
