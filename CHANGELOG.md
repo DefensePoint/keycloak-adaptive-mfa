@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Adaptive MFA admin page's settings and scoring calls say what is wrong.
+  A realm without an engine endpoint, or without the `adaptive-auth-api` client
+  or its secret, gets a 409 saying Adaptive MFA is not set up for the realm and
+  what is missing; before, the engine was called without a token, or at a URL
+  with no host, and the page showed "AMFA engine returned HTTP 401: Malformed
+  token" or "AMFA engine unreachable: null". A token request that fails gets a
+  502 with what the token endpoint answered. An unreachable engine is described
+  in words: an unknown host is named as one, a timeout says how long was
+  waited, and a refused connection keeps its detail
+
 - Switching AMFA off for a realm (the admin page's "Enabled" switch, realm
   attribute `adaptiveToggle=false`) now takes effect at login: the engine is
   sent neither the auth context nor the risk request, and the login continues
