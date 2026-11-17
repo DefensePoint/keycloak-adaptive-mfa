@@ -22,12 +22,14 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.mockito.ArgumentCaptor;
 
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -121,5 +123,41 @@ class ServiceAccountServiceTest {
             assertTrue(waitedMillis < ServiceAccountService.TOKEN_TIMEOUT_MILLIS + 3000, "waited " + waitedMillis + " ms");
             accept.interrupt();
         }
+    }
+
+    @Test
+    void aMissingClientIsNotConfigured() {
+        when(realm.getClientByClientId("adaptive-auth-api")).thenReturn(null);
+
+        ServiceAccountNotConfiguredException e = assertThrows(ServiceAccountNotConfiguredException.class,
+                () -> ServiceAccountService.requestServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals("client 'adaptive-auth-api' not found in realm 'demo'", e.getMessage());
+        assertNull(ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+    }
+
+    @Test
+    void aClientWithoutASecretIsNotConfigured() {
+        ClientModel client = mock(ClientModel.class);
+        when(realm.getClientByClientId("adaptive-auth-api")).thenReturn(client);
+
+        ServiceAccountNotConfiguredException e = assertThrows(ServiceAccountNotConfiguredException.class,
+                () -> ServiceAccountService.requestServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals("client 'adaptive-auth-api' has no secret", e.getMessage());
+    }
+
+    @Test
+    void aRefusedTokenRequestSaysWhatTheEndpointAnswered() throws Exception {
+        CloseableHttpClient client = mock(CloseableHttpClient.class);
+        Token refused = new Token();
+        refused.setStatusCode(401);
+        refused.setEntity(new StringEntity("{\"error\":\"unauthorized_client\"}"));
+        when(client.execute(any(HttpUriRequest.class))).thenReturn(refused);
+        when(provider.getHttpClient()).thenReturn(client);
+        keycloakAt("http://iam.test");
+
+        IOException e = assertThrows(IOException.class,
+                () -> ServiceAccountService.requestServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals("the token endpoint returned HTTP 401: {\"error\":\"unauthorized_client\"}", e.getMessage());
+        assertNull(ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
     }
 }
