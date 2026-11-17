@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `amfa-login-event-details` required action is registered, as for the other
   AMFA details
 
+### Changed
+
+- A login webhook for an event with no user at all, such as a login with an
+  unknown username, goes out on a lane picked by the event's own ID instead of
+  the realm's one lane. A burst of them, as in a password-guessing run, spreads
+  over the lanes instead of queueing behind one another and filling that lane,
+  after which further ones were dropped. Events with a user still keep that
+  user's order
+
 ### Fixed
 
 - The Adaptive MFA admin page's settings and scoring calls say what is wrong.
