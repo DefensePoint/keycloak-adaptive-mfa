@@ -270,7 +270,20 @@ class AmfaWebhookEventListenerProviderTest {
     }
 
     @Test
-    void realmWithNeitherSwitchNorEndpointGetsNoWebhook() {
+    void realmWithASwitchSetToAnythingButFalseGetsTheWebhook() {
+        // The same rule as the login steps: only "false" is off.
+        assertEquals(true, sendsLoginWebhook("yes", "http://engine.test"));
+    }
+
+    @Test
+    void switchedOffRealmGetsNoWebhookWhateverItsCase() {
+        assertEquals(false, sendsLoginWebhook(" FALSE ", "http://engine.test"));
+    }
+
+    @Test
+    void realmWithoutAnEndpointGetsNoWebhookEvenWhenOn() {
+        // Not the switch's doing: there is nowhere to send it.
+        assertEquals(false, sendsLoginWebhook("true", null));
         assertEquals(false, sendsLoginWebhook(null, null));
     }
 }

@@ -45,7 +45,7 @@ public class AuthContextAuthenticator implements Authenticator {
     @Override
     public void authenticate(AuthenticationFlowContext context) {
         // AMFA switched off for the realm: the engine is not sent the context.
-        if (!AdaptiveAuthUtils.isSwitchedOn(context.getRealm())) {
+        if (AdaptiveAuthUtils.isSwitchedOff(context.getRealm())) {
             context.success();
             return;
         }
@@ -60,9 +60,15 @@ public class AuthContextAuthenticator implements Authenticator {
                     .map(Locale::toString).collect(Collectors.joining(",")).replace("_", "-");
             String client = context.getAuthenticationSession().getClient().getClientId();
 
+            String endpoint = StringUtils.defaultString(context.getSession().getContext().getRealm().getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT));
+            if (endpoint.isBlank()) {
+                // No engine to send the context to; the risk step reports the missing
+                // endpoint and applies the failure mode.
+                context.success();
+                return;
+            }
             String token = getTokenFromServiceAccount();
 
-            String endpoint = StringUtils.defaultString(context.getSession().getContext().getRealm().getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT));
             String url = endpoint.concat("/").concat(URL);
 
             AuthContextModel authContextMap = new AuthContextModel(client, ipAddress, userAgent, locales, screenResolution);

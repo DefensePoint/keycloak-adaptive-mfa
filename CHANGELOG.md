@@ -19,20 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   either (the login webhook was already off), so after switching back on its
   history-based signals, such as inactive account, do not count the logins
   made in between
-
-### Changed
-
-- A realm without the `adaptiveToggle` attribute is on only when it has an
-  engine endpoint (`adaptiveAuthEndpoint`), as a realm set up through the
-  admin REST API has; a realm never set up for AMFA, master included, is now
-  off, and its logins no longer ask the engine. The exception is a realm
-  without a switch in `mandatory` failure mode: it stays on, so a missing
-  endpoint still denies its logins instead of letting them through as low
-  risk. A set switch decides as before, and only `true` is on. The risk
-  request, the auth context and the login webhook all follow this rule, so a
-  realm with an endpoint but no switch now also sends the login webhook.
-  Upgrade the admin UI with it: the admin UI release that reads the switch the
-  same way shows these realms as they are treated at login
+- The login webhook follows the same switch as the login steps: only an
+  explicit `adaptiveToggle=false` switches AMFA off, and a realm without the
+  attribute is on. It goes to every realm that is not switched off and has an
+  engine endpoint (`adaptiveAuthEndpoint`). Before, it went only to a realm
+  with `adaptiveToggle=true`, so a realm set up through the admin REST API,
+  which has an endpoint but no switch, was risk-checked at login while the
+  engine never heard of its logins, and a hand-set value such as `yes` sent
+  logins to the engine without the webhook
+- A realm with the AMFA step in its login flow but no engine endpoint, for
+  example after an admin REST update that replaced the realm's attributes
+  without the AMFA ones, no longer sends the risk request to an invalid URL.
+  The risk step logs `ADAPTIVE_AUTH_ENGINE_UNREACHABLE` naming the missing
+  endpoint and applies the failure mode, so the login gets the fallback risk
+  level, or is denied in `mandatory` mode; the auth context step sends nothing.
+  Upgrade the admin UI with it: its matching release shows such a realm as on
+  and asks for the endpoint
 
 ## [1.0.1] - 2026-09-22
 

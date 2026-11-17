@@ -146,12 +146,25 @@ class AuthContextAuthenticatorTest {
     @Test
     void noSwitchAndNoEndpointSendsNothingToTheEngine() {
         when(context.getRealm().getAttribute("adaptiveToggle")).thenReturn(null);
-        when(context.getRealm().getAttribute("adaptiveAuthEndpoint")).thenReturn(null);
+        when(flowSession.getContext().getRealm().getAttribute("adaptiveAuthEndpoint")).thenReturn(null);
 
         authenticate();
 
         http.verify(() -> AmfaHttp.create(any(KeycloakSession.class), anyInt()), never());
         serviceAccounts.verify(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()), never());
+        verify(context, times(1)).success();
+    }
+
+    @Test
+    void aSwitchSetToAnythingButFalseSendsTheContext() throws Exception {
+        when(context.getRealm().getAttribute("adaptiveToggle")).thenReturn("yes");
+        when(context.getRealm().getAttribute("adaptiveAuthEndpoint")).thenReturn("http://engine.test");
+        when(response.getStatus()).thenReturn(200);
+        when(response.asString()).thenReturn("{\"hash\":\"abc123\"}");
+
+        authenticate();
+
+        verify(authenticationSession).setAuthNote(AUTH_CONTEXT_HASH, "abc123");
         verify(context, times(1)).success();
     }
 

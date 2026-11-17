@@ -157,7 +157,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         }
         try {
             RealmModel realm = session.realms().getRealm(event.getRealmId());
-            if (!AdaptiveAuthUtils.isSwitchedOn(realm)) {
+            if (realm == null || AdaptiveAuthUtils.isSwitchedOff(realm)) {
                 return;
             }
             String endpoint = realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT);
