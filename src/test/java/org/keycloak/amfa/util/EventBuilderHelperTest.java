@@ -81,6 +81,21 @@ class EventBuilderHelperTest {
         verify(eventBuilder).detail(EventBuilderHelper.USER_ID_DETAIL, "u-1");
     }
 
+    // The decision's ID, which the LOGIN webhook reuses, is how a monitoring
+    // tool joins this event to AMFA's record of the same login.
+    @Test
+    void namesTheAmfaEventOnTheEvent() {
+        when(eventBuilder.detail(anyString(), nullable(String.class))).thenReturn(eventBuilder);
+        when(authSession.getAuthNote(AdaptiveAuthAuthenticator.EVENT_ID_NOTE)).thenReturn("decision-1");
+
+        EventBuilderHelper.addExtraDetailsToEvent(eventBuilder, authSession);
+
+        verify(eventBuilder).detail(EventBuilderHelper.AMFA_EVENT_ID_DETAIL, "decision-1");
+        // Not a webhook value, so no user-session note.
+        verify(authSession, never()).setUserSessionNote(
+                eq(EventBuilderHelper.userSessionNoteKey(EventBuilderHelper.AMFA_EVENT_ID_DETAIL)), nullable(String.class));
+    }
+
     @Test
     void noAuthenticatedUserAddsNoUserDetail() {
         when(eventBuilder.detail(anyString(), nullable(String.class))).thenReturn(eventBuilder);

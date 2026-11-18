@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The events of a login AMFA scored carry an `amfa_event_id` detail: the ID of
+  the engine's decision, which the login webhook also reports the LOGIN under.
+  A monitoring tool that reads both Keycloak's events and the engine's records
+  can then join a LOGIN to the engine's record of it and show the login once
+  instead of twice. An SSO login's LOGIN event carries it when the
+  `amfa-login-event-details` required action is registered, as for the other
+  AMFA details
+
+### Changed
+
+- A login webhook for an event with no user at all, such as a login with an
+  unknown username, goes out on a lane picked by the event's own ID instead of
+  the realm's one lane. A burst of them, as in a password-guessing run, spreads
+  over the lanes instead of queueing behind one another and filling that lane,
+  after which further ones were dropped. Events with a user still keep that
+  user's order
+
 ### Fixed
+
+- The Adaptive MFA admin page's settings and scoring calls say what is wrong.
+  A realm without an engine endpoint, or without the `adaptive-auth-api` client
+  or its secret, gets a 409 saying Adaptive MFA is not set up for the realm and
+  what is missing; before, the engine was called without a token, or at a URL
+  with no host, and the page showed "AMFA engine returned HTTP 401: Malformed
+  token" or "AMFA engine unreachable: null". A token request that fails gets a
+  502 with what the token endpoint answered. An unreachable engine is described
+  in words: an unknown host is named as one, a timeout says how long was
+  waited, and a refused connection keeps its detail
 
 - The AMFA TOTP step refuses a code, even the right one, while the realm's
   brute-force protection has the account locked out. Before, wrong codes on
