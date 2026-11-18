@@ -217,7 +217,10 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
     /**
      * The lane an event is sent on: the user it is about, so one user's events
      * keep their order. A refused login that Keycloak emitted without a user
-     * goes by the user AMFA scored.
+     * goes by the user AMFA scored. An event with no user at all, such as a
+     * login with an unknown username, has no order to keep, so it goes by its
+     * own ID: a burst of them spreads over the lanes instead of queueing on the
+     * realm's one lane, where a full queue would drop them.
      */
     private static String laneKey(Event event) {
         if (event.getUserId() != null) {
@@ -225,7 +228,10 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         }
         Map<String, String> details = event.getDetails() != null ? event.getDetails() : Map.of();
         String scored = details.get(EventBuilderHelper.USER_ID_DETAIL);
-        return scored != null ? scored : event.getRealmId();
+        if (scored != null) {
+            return scored;
+        }
+        return event.getId() != null ? event.getId() : event.getRealmId();
     }
 
     @Override
