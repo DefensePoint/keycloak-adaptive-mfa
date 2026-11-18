@@ -87,10 +87,15 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
 
         // Each new code counts against the step's limit for this login, and at
         // the limit the step ends: the user starts the login again. A plain
-        // challenge, not a failure, so it does not count as a failed login; the
-        // wrong guesses that may have led here were counted already.
+        // challenge, not a failure, so Keycloak's brute-force protection does
+        // not count it; the wrong guesses that may have led here were counted
+        // already. The limit is recorded once per login: the engine counts each
+        // LOGIN_ERROR among the user's failed logins, so recording every showing
+        // would let reloads of this page raise the user's risk for later logins.
         if (mfaUtils.getSentCount(authSession) >= codesPerLogin(context)) {
-            context.getEvent().user(context.getUser()).error(CODE_LIMIT_REACHED);
+            if (mfaUtils.markLimitRecorded(authSession)) {
+                context.getEvent().user(context.getUser()).error(CODE_LIMIT_REACHED);
+            }
             context.challenge(context.form()
                     .setError("mfaCodeLimitReached")
                     .createErrorPage(Response.Status.BAD_REQUEST));
@@ -158,6 +163,14 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
 
         if (formData.containsKey("resend")) {
+            // At the limit no new code can be sent. A code that is still valid
+            // is kept, so the user can still enter it, and the page says so.
+            if (mfaUtils.getStoredCode(authSession) != null
+                    && !mfaUtils.isExpired(authSession, CODE_TTL_SECONDS)
+                    && mfaUtils.getSentCount(authSession) >= codesPerLogin(context)) {
+                challengeWithForm(context, "mfaNoMoreCodes");
+                return;
+            }
             // A fresh code, not a guess: resets this code's own attempt/TTL
             // budget, but NOT the brute-force counter below. An attacker
             // cannot dodge the account+address lockout by asking for a new
@@ -294,8 +307,16 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
     }
 
     private void challengeWithForm(AuthenticationFlowContext context) {
+        challengeWithForm(context, null);
+    }
+
+    /** The code page, with {@code error} as its message when not null. */
+    private void challengeWithForm(AuthenticationFlowContext context, String error) {
         LoginFormsProvider form = context.form()
                 .setAttribute("email", context.getUser().getEmail());
+        if (error != null) {
+            form.setError(error);
+        }
         Response challenge = form.createForm("login-mfa-email.ftl");
         context.challenge(challenge);
     }

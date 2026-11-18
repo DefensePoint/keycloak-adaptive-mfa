@@ -15,9 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to guess at. A reload now shows the code already sent. A new code is sent
   only on Resend, when the code has expired or after three wrong guesses, and
   one login gets at most three codes; the step's new "Codes per login" setting
-  changes that. At the limit the step shows that too many codes were
-  requested, and the user starts the login again. A code whose email could not
-  be sent does not count
+  changes that. Resend at the limit keeps the code already sent. Once no
+  valid code is left, the step shows that too many codes were requested, and
+  the user starts the login again; this is recorded once per login, as a
+  `LOGIN_ERROR` event (`reached_resend_otp_limit`). A code whose email could
+  not be sent does not count. The limit is per login: a new login allows as
+  many codes again, so a flood of emails is slowed, not capped.
 
 - Switching AMFA off for a realm (the admin page's "Enabled" switch, realm
   attribute `adaptiveToggle=false`) now takes effect at login: the engine is

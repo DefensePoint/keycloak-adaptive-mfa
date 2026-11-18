@@ -145,6 +145,20 @@ class MfaEmailAuthenticatorTest {
         verify(context, times(times)).challenge(errorPage);
     }
 
+    /** Resend at the limit with a live code: the code page again, saying no more can be sent. */
+    private void verifyNoMoreCodes(int times) {
+        verify(form, times(times)).setError("mfaNoMoreCodes");
+        verify(context, never()).challenge(errorPage);
+    }
+
+    /** All three codes sent and the last one expired: nothing is left to enter. */
+    private void reachTheLimitPage() {
+        sendAllThreeCodes();
+        expireLiveCode();
+        authenticator.authenticate(context);
+        verifyLimitPage(1);
+    }
+
     @Test
     void theFirstShowingSendsOneCode() {
         authenticator.authenticate(context);
@@ -188,16 +202,49 @@ class MfaEmailAuthenticatorTest {
         resend();
 
         assertEquals(3, sentCodes.size());
-        verifyLimitPage(1);
-        assertNull(notes.get(MfaUtils.AUTH_NOTE_OTP_CODE));
+        verifyNoMoreCodes(1);
+        assertEquals(sentCodes.get(2), notes.get(MfaUtils.AUTH_NOTE_OTP_CODE));
+    }
+
+    // Resend at the limit used to clear the code before finding the limit, so a
+    // code still valid in the user's inbox could no longer be used.
+    @Test
+    void resendAtTheLimitKeepsTheLiveCodeAndItStillLogsIn() {
+        sendAllThreeCodes();
+        String live = sentCodes.get(2);
+
+        resend();
+
+        assertEquals(3, sentCodes.size());
+        assertEquals(live, notes.get(MfaUtils.AUTH_NOTE_OTP_CODE));
+        verifyNoMoreCodes(1);
+        verify(event, never()).error(MfaEmailAuthenticator.CODE_LIMIT_REACHED);
+        verify(context, never()).failureChallenge(any(), any());
+
+        guess(live);
+        verify(context).success();
+    }
+
+    // Each showing of the limit page used to record a LOGIN_ERROR, which the
+    // engine counts among the user's failed logins: reloading the page could
+    // raise the user's risk for later logins.
+    @Test
+    void theLimitIsRecordedOnceHoweverOftenItsPageIsShown() {
+        reachTheLimitPage();
+
+        authenticator.authenticate(context);
+        authenticator.authenticate(context);
+        resend();
+        guess("123456");
+
+        verifyLimitPage(5);
+        verify(event, times(1)).error(MfaEmailAuthenticator.CODE_LIMIT_REACHED);
     }
 
     @Test
     void theLimitPageIsNotCountedAsAFailedLogin() {
-        sendAllThreeCodes();
-        resend();
+        reachTheLimitPage();
 
-        verifyLimitPage(1);
         verify(context, never()).failureChallenge(any(), any());
         verify(context, never()).failure(any(), any());
         verify(protector, never()).failedLogin(any(), any(), any(), any(), any());
@@ -205,8 +252,7 @@ class MfaEmailAuthenticatorTest {
 
     @Test
     void afterTheLimitARefreshShowsTheLimitPageAgainAndSendsNothing() {
-        sendAllThreeCodes();
-        resend();
+        reachTheLimitPage();
         authenticator.authenticate(context);
 
         assertEquals(3, sentCodes.size());
@@ -269,7 +315,8 @@ class MfaEmailAuthenticatorTest {
     void aCodeEnteredAfterTheLimitIsNotCheckedOrCounted() {
         sendAllThreeCodes();
         String last = sentCodes.get(2);
-        resend();
+        expireLiveCode();
+        authenticator.authenticate(context);
         guess(last);
 
         verify(context, never()).success();
@@ -286,7 +333,7 @@ class MfaEmailAuthenticatorTest {
 
         resend();
         assertEquals(4, sentCodes.size());
-        verifyLimitPage(1);
+        verifyNoMoreCodes(1);
     }
 
     @Test
@@ -296,7 +343,7 @@ class MfaEmailAuthenticatorTest {
         resend();
 
         assertEquals(1, sentCodes.size());
-        verifyLimitPage(1);
+        verifyNoMoreCodes(1);
     }
 
     @Test

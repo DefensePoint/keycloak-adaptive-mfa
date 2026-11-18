@@ -32,6 +32,12 @@ public class MfaUtils {
      */
     public static final String AUTH_NOTE_OTP_SENT = "amfa-otp-sent";
 
+    /**
+     * Set once this login has reached its code limit and that was recorded,
+     * so the limit is recorded once however often its page is shown.
+     */
+    public static final String AUTH_NOTE_OTP_LIMIT_RECORDED = "amfa-otp-limit-recorded";
+
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public String generateCode() {
@@ -91,6 +97,18 @@ public class MfaUtils {
     /** Counts one more code sent to this login. */
     public void countSent(AuthenticationSessionModel authSession) {
         authSession.setAuthNote(AUTH_NOTE_OTP_SENT, Integer.toString(getSentCount(authSession) + 1));
+    }
+
+    /**
+     * Marks this login's code limit as recorded, and reports whether it was
+     * not recorded before.
+     */
+    public boolean markLimitRecorded(AuthenticationSessionModel authSession) {
+        if (authSession.getAuthNote(AUTH_NOTE_OTP_LIMIT_RECORDED) != null) {
+            return false;
+        }
+        authSession.setAuthNote(AUTH_NOTE_OTP_LIMIT_RECORDED, "true");
+        return true;
     }
 
     public int getSentCount(AuthenticationSessionModel authSession) {
