@@ -9,7 +9,6 @@ import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 
-import java.util.Collections;
 import java.util.List;
 
 public abstract class MfaEmailAuthenticatorFactory implements AuthenticatorFactory {
@@ -19,9 +18,10 @@ public abstract class MfaEmailAuthenticatorFactory implements AuthenticatorFacto
         return "otp";
     }
 
+    /** True for the codes-per-login setting; a step without it uses the default. */
     @Override
     public boolean isConfigurable() {
-        return false;
+        return true;
     }
 
     @Override
@@ -55,7 +55,15 @@ public abstract class MfaEmailAuthenticatorFactory implements AuthenticatorFacto
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
-        return Collections.emptyList();
+        return List.of(new ProviderConfigProperty(
+                MfaEmailAuthenticator.CONFIG_CODES_PER_LOGIN,
+                "Codes per login",
+                "How many codes one login may send, the first included. Resend, an expired code and a"
+                        + " new code after three wrong guesses each use one; at the limit the user starts"
+                        + " the login again. Refreshing the page shows the code already sent. Default "
+                        + MfaEmailAuthenticator.DEFAULT_CODES_PER_LOGIN + ".",
+                ProviderConfigProperty.STRING_TYPE,
+                String.valueOf(MfaEmailAuthenticator.DEFAULT_CODES_PER_LOGIN)));
     }
 
     @Override

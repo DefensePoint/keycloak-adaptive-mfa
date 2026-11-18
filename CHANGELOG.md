@@ -46,16 +46,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code", which does not reveal the lockout, and the refusal is not counted as
   another failed login. The email code step already had this check
 
+- The email code step no longer sends a new code every time it is shown. A
+  page reload showed the step again and sent a new email each time, without
+  limit, so a reload loop could flood the user's inbox and hand out fresh codes
+  to guess at. A reload now shows the code already sent. A new code is sent
+  only on Resend, when the code has expired or after three wrong guesses, and
+  one login gets at most three codes; the step's new "Codes per login" setting
+  changes that. Resend at the limit keeps the code already sent. Once no
+  valid code is left, the step shows that too many codes were requested, and
+  the user starts the login again; this is recorded once per login, as a
+  `LOGIN_ERROR` event (`reached_resend_otp_limit`). A code whose email could
+  not be sent does not count. The limit is per login: a new login allows as
+  many codes again, so a flood of emails is slowed, not capped.
+
 - Switching AMFA off for a realm (the admin page's "Enabled" switch, realm
   attribute `adaptiveToggle=false`) now takes effect at login: the engine is
   sent neither the auth context nor the risk request, and the login continues
   as low risk (risk level 1, decision source `amfa_off`). That is the level a
   low-risk answer from the engine gives, so a step-up set at level 2 or above
   does not fire, while a flow branch for level 1 (`EQUAL` or `LESS_OR_EQUAL`)
-  runs for every login. A realm without the attribute keeps AMFA as before.
-  While AMFA is off the engine records no logins either (the login webhook was
-  already off), so after switching back on its history-based signals, such as
-  inactive account, do not count the logins made in between
+  runs for every login. While AMFA is off the engine records no logins
+  either (the login webhook was already off), so after switching back on its
+  history-based signals, such as inactive account, do not count the logins
+  made in between
+- The login webhook follows the same switch as the login steps: only an
+  explicit `adaptiveToggle=false` switches AMFA off, and a realm without the
+  attribute is on. It goes to every realm that is not switched off and has an
+  engine endpoint (`adaptiveAuthEndpoint`). Before, it went only to a realm
+  with `adaptiveToggle=true`, so a realm set up through the admin REST API,
+  which has an endpoint but no switch, was risk-checked at login while the
+  engine never heard of its logins, and a hand-set value such as `yes` sent
+  logins to the engine without the webhook
+- A realm with the AMFA step in its login flow but no engine endpoint, for
+  example after an admin REST update that replaced the realm's attributes
+  without the AMFA ones, no longer sends the risk request to an invalid URL.
+  The risk step logs `ADAPTIVE_AUTH_ENGINE_UNREACHABLE` naming the missing
+  endpoint and applies the failure mode, so the login gets the fallback risk
+  level, or is denied in `mandatory` mode; the auth context step sends nothing.
+  Upgrade the admin UI with it: its matching release shows such a realm as on
+  and asks for the endpoint
 - The risk-level condition ("Conditional - User Risk Level") counts a login
   AMFA did not score as the highest risk, for example when the flow has no
   risk step before it. Such a login no longer matches "equal" or "less or

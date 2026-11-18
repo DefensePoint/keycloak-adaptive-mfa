@@ -197,6 +197,99 @@ class AdaptiveAuthAuthenticatorTest {
         verify(session, never()).getProvider(any());
     }
 
+    /** A login context whose engine call is answered by {@code decision}. */
+    private AuthenticationFlowContext loginContext(String toggle, String endpoint, String failureMode) {
+        AuthenticationFlowContext ctx = mock(AuthenticationFlowContext.class, Answers.RETURNS_DEEP_STUBS);
+        when(ctx.getUser()).thenReturn(user);
+        when(ctx.getRealm()).thenReturn(realm);
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(toggle);
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT)).thenReturn(endpoint);
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn(failureMode);
+        lenient().when(realm.getName()).thenReturn("demo");
+        lenient().when(user.getId()).thenReturn("user-1");
+        when(user.getGroupsStream()).thenReturn(Stream.empty());
+        when(ctx.getHttpRequest().getHttpHeaders().getRequestHeaders()).thenReturn(new MultivaluedHashMap<>());
+        when(ctx.getHttpRequest().getHttpHeaders().getAcceptableLanguages()).thenReturn(List.of());
+        when(ctx.getAuthenticationSession().getUserSessionNotes()).thenReturn(Map.of());
+        return ctx;
+    }
+
+    @Test
+    void authenticate_noSwitchAndNoEndpointInAdvisoryMode_stepsUpAtTheFallbackLevel() {
+        // A realm whose AMFA attributes an admin REST update removed: the switch,
+        // the endpoint and the failure mode are gone, but the step is still in its
+        // flow. It must not log in as low risk; it gets the fallback level.
+        AuthenticationFlowContext ctx = loginContext(null, null, "advisory");
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new AdaptiveAuthDecision(AdaptiveAuthUtils.HIGH_RISK_LEVEL, true));
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+        verify(ctx.getAuthenticationSession(), never()).setAuthNote(AdaptiveAuthAuthenticator.DECISION_SOURCE_NOTE,
+                AdaptiveAuthAuthenticator.DECISION_SOURCE_AMFA_OFF);
+        verify(ctx.getAuthenticationSession()).setAuthNote(AdaptiveAuthAuthenticator.AUTH_NOTE,
+                String.valueOf(AdaptiveAuthUtils.HIGH_RISK_LEVEL));
+        verify(ctx).success();
+    }
+
+    @Test
+    void authenticate_noAmfaAttributesAtAll_stepsUpAtTheFallbackLevel() {
+        AuthenticationFlowContext ctx = loginContext(null, null, null);
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new AdaptiveAuthDecision(AdaptiveAuthUtils.HIGH_RISK_LEVEL, true));
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+        verify(ctx.getAuthenticationSession()).setAuthNote(AdaptiveAuthAuthenticator.AUTH_NOTE,
+                String.valueOf(AdaptiveAuthUtils.HIGH_RISK_LEVEL));
+    }
+
+    @Test
+    void authenticate_noSwitchAndNoEndpointInMandatoryFailureMode_isDenied() {
+        AuthenticationFlowContext ctx = loginContext(null, null, "mandatory");
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new EngineUnavailableException("no endpoint", null));
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+        verify(ctx).failure(AuthenticationFlowError.ACCESS_DENIED);
+    }
+
+    @Test
+    void authenticate_aSwitchSetToAnythingButFalse_asksTheEngine() {
+        // Only "false" is off: a hand-set "yes" or "1" keeps the realm risk-checked,
+        // as before, in either failure mode.
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new EngineUnavailableException("stop", null));
+        for (String value : new String[]{"true", "yes", "1"}) {
+            AuthenticationFlowContext ctx = loginContext(value, "http://engine.test", "mandatory");
+
+            new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+            verify(ctx.getAuthenticationSession(), never()).setAuthNote(AdaptiveAuthAuthenticator.DECISION_SOURCE_NOTE,
+                    AdaptiveAuthAuthenticator.DECISION_SOURCE_AMFA_OFF);
+            verify(ctx).failure(AuthenticationFlowError.ACCESS_DENIED);
+        }
+    }
+
+    @Test
+    void authenticate_noSwitchButAnEndpoint_asksTheEngine() {
+        AuthenticationFlowContext ctx = loginContext(null, "http://engine.test", null);
+        when(ctx.getAuthenticationSession().getClient().getClientId()).thenReturn("web");
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new EngineUnavailableException("stop", null));
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+        verify(adaptiveAuthUtils).getUserAdaptiveAuthDecision(any(), any(), anyInt(), eq("user-1"), eq("web"),
+                any(), any(), any(), any(), eq("demo"), any(), any(), any());
+    }
+
     // --- authenticate without a User-Agent header ---
 
     @Test
@@ -204,6 +297,7 @@ class AdaptiveAuthAuthenticatorTest {
         AuthenticationFlowContext ctx = mock(AuthenticationFlowContext.class, Answers.RETURNS_DEEP_STUBS);
         when(ctx.getUser()).thenReturn(user);
         when(ctx.getRealm()).thenReturn(realm);
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("true");
         when(realm.getName()).thenReturn("demo");
         when(user.getId()).thenReturn("user-1");
         when(user.getGroupsStream()).thenReturn(Stream.empty());
