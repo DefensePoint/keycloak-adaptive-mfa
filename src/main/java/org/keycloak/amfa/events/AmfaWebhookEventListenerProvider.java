@@ -157,7 +157,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         }
         try {
             RealmModel realm = session.realms().getRealm(event.getRealmId());
-            if (realm == null || !amfaEnabled(realm)) {
+            if (realm == null || AdaptiveAuthUtils.isSwitchedOff(realm)) {
                 return;
             }
             String endpoint = realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT);
@@ -241,10 +241,6 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
 
     @Override
     public void close() {
-    }
-
-    private boolean amfaEnabled(RealmModel realm) {
-        return Boolean.parseBoolean(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE));
     }
 
     /**
