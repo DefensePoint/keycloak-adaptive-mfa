@@ -32,15 +32,33 @@ public class ConditionalUserConfiguredAdaptiveAuthAuthenticator implements Condi
         int authenticatorRiskLevel = this.getAuthenticatorRiskLevel(context);
         String operator = comparison(context);
 
-        // A login AMFA did not score never matches "equal" or "less or equal": a sub-flow
-        // meant for low-risk logins must not run for a login that was never scored.
+        // A login AMFA did not score counts as the highest risk: it never matches "equal"
+        // or "less or equal", so a sub-flow meant for low-risk logins does not run for
+        // it, and it always matches "greater or equal", so a step-up does, instead of
+        // the login going on with the password alone. Only a flow without the risk
+        // step before the condition gets here: switched-off AMFA and the fallback
+        // level both score the login.
+        if (!scored) {
+            warnUnscoredOnce(context);
+        }
         switch (operator) {
             case "EQUAL":
                 return scored && userRiskLevel == authenticatorRiskLevel;
             case "LESS_OR_EQUAL":
                 return scored && userRiskLevel <= authenticatorRiskLevel;
             default:
-                return userRiskLevel >= authenticatorRiskLevel;
+                return !scored || userRiskLevel >= authenticatorRiskLevel;
+        }
+    }
+
+    private static void warnUnscoredOnce(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        String alias = config == null ? null : config.getAlias();
+        String realmName = context.getRealm() == null ? null : context.getRealm().getName();
+        if (WARNED.add("Unscored\u0000" + realmName + "\u0000" + alias)) {
+            log.warn("AMFA risk condition {} in realm {} got a login AMFA did not score, so it is "
+                    + "matched as the highest risk; put the AMFA risk step before the condition",
+                    alias, realmName);
         }
     }
 

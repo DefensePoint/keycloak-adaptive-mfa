@@ -19,14 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   While AMFA is off the engine records no logins either (the login webhook was
   already off), so after switching back on its history-based signals, such as
   inactive account, do not count the logins made in between
-- The risk-level condition ("Conditional - User Risk Level") no longer
-  matches a login AMFA did not score with "equal" or "less or equal", for
-  example when the flow has no risk step before it. A sub-flow meant for
-  low-risk logins ran for such a login. "Greater or equal" is unchanged. A
-  condition without a config, or with a level that is not a number, no
-  longer fails the login: it compares against no level, so "greater or
-  equal" matches and the step-up runs, and the comparison or level that
-  cannot be used is logged once
+- The risk-level condition ("Conditional - User Risk Level") counts a login
+  AMFA did not score as the highest risk, for example when the flow has no
+  risk step before it. Such a login no longer matches "equal" or "less or
+  equal", so a sub-flow meant for low-risk logins no longer runs for it, and
+  it now matches "greater or equal", so a step-up runs instead of the login
+  going on with the password alone. A warning that the condition got an
+  unscored login is logged once per realm and condition. A condition
+  without a config, or with a level that is not a number, no longer fails
+  the login: it compares against no level, so "greater or equal" matches
+  and the step-up runs, and the comparison or level that cannot be used is
+  logged once
 
 ## [1.0.1] - 2026-09-22
 

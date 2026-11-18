@@ -117,9 +117,23 @@ class ConditionalUserConfiguredAdaptiveAuthAuthenticatorTest {
     }
 
     @Test
-    void matchCondition_unscored_greaterOrEqualIsUnchanged() {
+    void matchCondition_unscored_matchesGreaterOrEqualAsTheHighestRisk() {
+        // A step-up for risky logins must run for a login AMFA never scored, rather
+        // than let it in on the password alone.
         setupMocks(null, "2", "GREATER_OR_EQUAL");
-        assertFalse(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_unscored_matchesTheHighestLevel() {
+        setupMocks(null, "4", "GREATER_OR_EQUAL");
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_unscored_unknownOperatorAlsoMatchesAsTheHighestRisk() {
+        setupMocks(null, "2", "MORE_THAN");
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
     }
 
     @Test
