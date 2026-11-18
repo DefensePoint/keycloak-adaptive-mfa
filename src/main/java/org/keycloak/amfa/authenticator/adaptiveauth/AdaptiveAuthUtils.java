@@ -101,14 +101,25 @@ public class AdaptiveAuthUtils {
     /**
      * Whether the realm's AMFA switch (the admin page's "Enabled") is off.
      *
-     * <p>Only an explicit {@code false} counts. A realm that never saved the admin
-     * page has no {@code adaptiveToggle} attribute, and a realm update that sends an
-     * attributes map without it removes it, so treating a missing value as off would
-     * silently switch AMFA off for those realms.
+     * <p>Only an explicit {@code false} counts. The login steps run only in a realm
+     * whose flow contains them, so a realm without the attribute is one that put
+     * AMFA in its login on purpose. It may have lost the attribute: a realm update
+     * through the admin REST API replaces the whole attribute map, so one PUT that
+     * omits the AMFA attributes removes the switch, the endpoint and the failure
+     * mode together. Treating that as off would let its logins through as low
+     * risk; treated as on, a realm without an endpoint gets the fallback level (see
+     * {@link #getFallbackRiskLevel}), or is denied in mandatory failure mode. The
+     * login webhook and the admin page read the switch the same way.
      */
     public static boolean isSwitchedOff(RealmModel realm) {
         String toggle = realm == null ? null : realm.getAttribute(ADAPTIVE_AUTH_TOGGLE);
         return toggle != null && "false".equalsIgnoreCase(toggle.trim());
+    }
+
+    /** The realm's engine endpoint, or null when it has none. */
+    public static String engineEndpoint(RealmModel realm) {
+        String endpoint = realm == null ? null : realm.getAttribute(ADAPTIVE_AUTH_ENDPOINT);
+        return endpoint == null || endpoint.isBlank() ? null : endpoint.trim();
     }
 
     /**
@@ -200,7 +211,14 @@ public class AdaptiveAuthUtils {
         // not get re-caught by an enclosing catch (Exception e) here and reported
         // under the wrong message with a doubled log line.
         RealmModel realm = authSession.getRealm();
-        String url = realm.getAttribute(ADAPTIVE_AUTH_ENDPOINT);
+        String url = engineEndpoint(realm);
+        if (url == null) {
+            // Nothing to ask: no token, and no request to "null/decision".
+            return handleEngineFailure(realm, defaultRiskLevel,
+                    "The realm has the AMFA step in its login flow but no engine endpoint ("
+                            + ADAPTIVE_AUTH_ENDPOINT + "); set it on the realm's Adaptive MFA page, "
+                            + "or switch AMFA off there", null);
+        }
         AdaptiveAuthService adaptiveAuthService = new AdaptiveAuthService(session);
 
         String token;

@@ -8,9 +8,11 @@ import org.keycloak.amfa.util.EventBuilderHelper;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
+import org.keycloak.authentication.authenticators.util.AuthenticatorUtils;
 import org.keycloak.credential.CredentialProvider;
 import org.keycloak.credential.OTPCredentialProvider;
 import org.keycloak.credential.OTPCredentialProviderFactory;
+import org.keycloak.events.Errors;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -37,6 +39,13 @@ public abstract class MfaTOTPAuthenticator implements Authenticator {
 
     @Override
     public void action(AuthenticationFlowContext context) {
+        // First, before the code is even read: an empty submit is a failed
+        // login too, and must not extend the lockout either.
+        UserModel user = context.getUser();
+        if (denyIfLockedOut(context, user)) {
+            return;
+        }
+
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         // The login TOTP form rendered by createLoginTotp() posts the code in
         // the "otp" field (Keycloak's base login-otp.ftl), not "totp".
@@ -49,7 +58,6 @@ public abstract class MfaTOTPAuthenticator implements Authenticator {
             return;
         }
 
-        UserModel user = context.getUser();
         String credentialId = getCredentialProvider(context.getSession())
                 .getDefaultCredential(context.getSession(), context.getRealm(), user)
                 .getId();
@@ -71,6 +79,31 @@ public abstract class MfaTOTPAuthenticator implements Authenticator {
             context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
                     form.createLoginTotp());
         }
+    }
+
+    /**
+     * Refuse a code, even the right one, while the realm's brute-force
+     * protector has the account locked out. Without this a locked-out account
+     * could keep guessing on this form, and the right code logged it in.
+     *
+     * <p>Mirrors Keycloak's own OTP form ({@code OTPFormAuthenticator}): the
+     * same {@code *DisabledMessageTotp} messages, which read like a wrong code
+     * and so do not reveal the lockout, and {@code forceChallenge()} rather
+     * than a failure. The flow engine counts a FAILED or FAILURE_CHALLENGE
+     * result as another failed login, so a failure here would extend the
+     * lockout on every retry; MfaEmailAuthenticator's gate does the same.
+     */
+    private boolean denyIfLockedOut(AuthenticationFlowContext context, UserModel user) {
+        String bruteForceError = AuthenticatorUtils.getDisabledByBruteForceEventError(context, user);
+        if (bruteForceError == null) {
+            return false;
+        }
+        context.getEvent().user(user).error(bruteForceError);
+        String message = Errors.USER_TEMPORARILY_DISABLED.equals(bruteForceError)
+                ? "accountTemporarilyDisabledMessageTotp"
+                : "accountPermanentlyDisabledMessageTotp";
+        context.forceChallenge(context.form().setError(message).createLoginTotp());
+        return true;
     }
 
     @Override

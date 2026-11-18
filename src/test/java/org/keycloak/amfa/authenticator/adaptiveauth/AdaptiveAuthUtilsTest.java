@@ -7,13 +7,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import org.keycloak.http.HttpRequest;
+import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.sessions.AuthenticationSessionModel;
 import org.mockito.Answers;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -127,40 +133,95 @@ class AdaptiveAuthUtilsTest {
     }
 
     // --- isSwitchedOff ---
+    //
+    // Only an explicit "false" switches AMFA off. A realm without the attribute
+    // is on: the login steps run only in a realm whose flow contains them, and
+    // one admin REST update that omits the AMFA attributes removes the switch,
+    // which must not let that realm's logins through as low risk.
+
+    private void toggle(String value) {
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(value);
+    }
 
     @Test
-    void isSwitchedOff_returnsTrueForFalse() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("false");
+    void isSwitchedOff_trueForFalse() {
+        toggle("false");
         assertTrue(AdaptiveAuthUtils.isSwitchedOff(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsTrueCaseInsensitive() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(" FALSE ");
+    void isSwitchedOff_trueForFalseInAnyCaseAndSpacing() {
+        toggle(" FALSE ");
         assertTrue(AdaptiveAuthUtils.isSwitchedOff(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsFalseForTrue() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("true");
+    void isSwitchedOff_falseWithoutASwitch() {
+        toggle(null);
         assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsFalseWhenNotSet() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn(null);
+    void isSwitchedOff_falseForABlankSwitch() {
+        toggle("  ");
         assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsFalseForTypo() {
-        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE)).thenReturn("off");
+    void isSwitchedOff_falseForTrue() {
+        toggle("true");
         assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm));
     }
 
     @Test
-    void isSwitchedOff_returnsFalseWhenRealmIsNull() {
+    void isSwitchedOff_falseForAnyOtherValue() {
+        for (String value : new String[]{"yes", "1", "on", "enabled"}) {
+            toggle(value);
+            assertFalse(AdaptiveAuthUtils.isSwitchedOff(realm), value);
+        }
+    }
+
+    @Test
+    void isSwitchedOff_falseWhenRealmIsNull() {
         assertFalse(AdaptiveAuthUtils.isSwitchedOff(null));
+    }
+
+    // --- getUserAdaptiveAuthDecision without an endpoint ---
+    //
+    // A realm with the AMFA step in its flow and no engine endpoint, as one whose
+    // AMFA attributes an admin REST update removed: the engine cannot be asked, so
+    // the failure mode decides, without requesting a token or calling "null/decision".
+
+    @Test
+    void decision_withoutAnEndpoint_isTheFallbackLevelInAdvisoryMode() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT)).thenReturn(null);
+        lenient().when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn("advisory");
+        AuthenticationSessionModel authSession = mock(AuthenticationSessionModel.class);
+        when(authSession.getRealm()).thenReturn(realm);
+
+        try (MockedStatic<ServiceAccountService> tokens = mockStatic(ServiceAccountService.class)) {
+            AdaptiveAuthDecision decision = new AdaptiveAuthUtils().getUserAdaptiveAuthDecision(
+                    mock(KeycloakSession.class), authSession, 3, "user-1", "web", "203.0.113.9",
+                    "", "", "", "demo", "default", "event-1", "");
+            assertEquals(3, decision.getRiskLevel());
+            assertTrue(decision.isFromFallback());
+            tokens.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    void decision_withoutAnEndpoint_isDeniedInMandatoryMode() {
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT)).thenReturn("  ");
+        when(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_FAILURE_MODE)).thenReturn("mandatory");
+        AuthenticationSessionModel authSession = mock(AuthenticationSessionModel.class);
+        when(authSession.getRealm()).thenReturn(realm);
+
+        try (MockedStatic<ServiceAccountService> tokens = mockStatic(ServiceAccountService.class)) {
+            assertThrows(EngineUnavailableException.class, () -> new AdaptiveAuthUtils().getUserAdaptiveAuthDecision(
+                    mock(KeycloakSession.class), authSession, 3, "user-1", "web", "203.0.113.9",
+                    "", "", "", "demo", "default", "event-1", ""));
+            tokens.verifyNoInteractions();
+        }
     }
 
     // --- userAgent ---
