@@ -77,7 +77,8 @@ class MfaTOTPAuthenticatorTest {
     private void submit(String code, boolean valid) {
         MultivaluedHashMap<String, String> params = new MultivaluedHashMap<>();
         params.add("otp", code);
-        when(request.getDecodedFormParameters()).thenReturn(params);
+        // Lenient: a locked-out user is refused before the form is read.
+        lenient().when(request.getDecodedFormParameters()).thenReturn(params);
         lenient().when(credentials.isValid(any(org.keycloak.credential.CredentialInput.class))).thenReturn(valid);
     }
 
@@ -115,6 +116,35 @@ class MfaTOTPAuthenticatorTest {
         verify(form).setError("accountPermanentlyDisabledMessageTotp");
         verify(event).error(Errors.USER_DISABLED);
         verify(context).forceChallenge(page);
+    }
+
+    @Test
+    void aLockedOutUserSubmittingAnEmptyCodeIsRefusedWithoutAnotherFailedLogin() {
+        bruteForce(true, true, false);
+        submit("", false);
+
+        authenticator.action(context);
+
+        verify(context, never()).success();
+        verify(form).setError("accountTemporarilyDisabledMessageTotp");
+        verify(event).error(Errors.USER_TEMPORARILY_DISABLED);
+        // The lockout is checked before the code is read, as Keycloak's own
+        // OTP form does: an empty submit must not extend the lockout either.
+        verify(request, never()).getDecodedFormParameters();
+        verify(context).forceChallenge(page);
+        verify(context, never()).failureChallenge(any(), any());
+    }
+
+    @Test
+    void anEmptyCodeFromAUserWhoIsNotLockedOutIsAFailedLogin() {
+        bruteForce(true, false, false);
+        submit("", false);
+
+        authenticator.action(context);
+
+        verify(context, never()).success();
+        verify(form).setError("missingTotpMessage");
+        verify(context).failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS, page);
     }
 
     @Test

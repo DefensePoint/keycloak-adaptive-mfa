@@ -39,6 +39,13 @@ public abstract class MfaTOTPAuthenticator implements Authenticator {
 
     @Override
     public void action(AuthenticationFlowContext context) {
+        // First, before the code is even read: an empty submit is a failed
+        // login too, and must not extend the lockout either.
+        UserModel user = context.getUser();
+        if (denyIfLockedOut(context, user)) {
+            return;
+        }
+
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         // The login TOTP form rendered by createLoginTotp() posts the code in
         // the "otp" field (Keycloak's base login-otp.ftl), not "totp".
@@ -48,11 +55,6 @@ public abstract class MfaTOTPAuthenticator implements Authenticator {
             LoginFormsProvider form = context.form().setError("missingTotpMessage");
             context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
                     form.createLoginTotp());
-            return;
-        }
-
-        UserModel user = context.getUser();
-        if (denyIfLockedOut(context, user)) {
             return;
         }
 
