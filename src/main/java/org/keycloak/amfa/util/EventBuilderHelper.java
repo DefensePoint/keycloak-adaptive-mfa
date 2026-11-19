@@ -74,6 +74,17 @@ public class EventBuilderHelper {
         }
     }
 
+    /**
+     * Record a failed attempt at a code step as a LOGIN_ERROR with {@code error},
+     * carrying the login's AMFA details like the LOGIN of a successful one. Without
+     * the details a monitoring tool cannot tie the failure to the login AMFA scored.
+     */
+    public static void recordError(EventBuilder eventBuilder, AuthenticationSessionModel authenticationSession,
+            UserModel user, String error) {
+        addExtraDetailsToEvent(eventBuilder, authenticationSession);
+        eventBuilder.user(user).error(error);
+    }
+
     /** For the four values the webhook payload carries: an event detail and its user-session note. */
     private static void detailAndUserSessionNote(EventBuilder eventBuilder,
             AuthenticationSessionModel authenticationSession, String detailKey, String authNoteKey) {

@@ -344,8 +344,8 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
      * scored it, so the engine can link the outcome to that decision even when
      * it no longer has the decision open: a login slower than the engine's
      * 5 minute pointer, or one where an earlier LOGIN_ERROR closed it as failed
-     * (Keycloak's own OTP form reports a wrong code that way; AMFA's code steps
-     * do not). Every other event keeps its own id, including such a
+     * (a wrong code on Keycloak's own OTP form or on AMFA's code steps is
+     * reported that way). Every other event keeps its own id, including such a
      * LOGIN_ERROR, because the engine rejects a second event with the same id
      * and would then lose the LOGIN that follows the right code.
      */

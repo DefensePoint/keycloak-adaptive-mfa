@@ -59,6 +59,8 @@ public abstract class MfaTOTPAuthenticator implements Authenticator {
         String totp = formData.getFirst("otp");
 
         if (totp == null || totp.isBlank()) {
+            EventBuilderHelper.recordError(context.getEvent(), context.getAuthenticationSession(),
+                    user, Errors.INVALID_USER_CREDENTIALS);
             LoginFormsProvider form = context.form().setError("missingTotpMessage");
             context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
                     form.createLoginTotp());
@@ -102,6 +104,10 @@ public abstract class MfaTOTPAuthenticator implements Authenticator {
             EventBuilderHelper.addExtraDetailsToEvent(context.getEvent(), context.getAuthenticationSession());
             context.success();
         } else {
+            // Recorded as Keycloak's own OTP form records a wrong code, so a
+            // monitoring tool sees code guessing on this step too.
+            EventBuilderHelper.recordError(context.getEvent(), context.getAuthenticationSession(),
+                    user, Errors.INVALID_USER_CREDENTIALS);
             LoginFormsProvider form = context.form().setError("invalidTotpMessage");
             context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
                     form.createLoginTotp());
@@ -125,7 +131,7 @@ public abstract class MfaTOTPAuthenticator implements Authenticator {
         if (bruteForceError == null) {
             return false;
         }
-        context.getEvent().user(user).error(bruteForceError);
+        EventBuilderHelper.recordError(context.getEvent(), context.getAuthenticationSession(), user, bruteForceError);
         String message = Errors.USER_TEMPORARILY_DISABLED.equals(bruteForceError)
                 ? "accountTemporarilyDisabledMessageTotp"
                 : "accountPermanentlyDisabledMessageTotp";
