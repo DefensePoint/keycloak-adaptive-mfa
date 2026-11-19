@@ -118,7 +118,8 @@ class MfaEmailAuthenticatorTest {
     private void post(String field, String value) {
         MultivaluedHashMap<String, String> params = new MultivaluedHashMap<>();
         params.add(field, value);
-        when(request.getDecodedFormParameters()).thenReturn(params);
+        // Lenient: a locked-out user is refused before the form is read.
+        lenient().when(request.getDecodedFormParameters()).thenReturn(params);
         authenticator.action(context);
     }
 
@@ -383,5 +384,47 @@ class MfaEmailAuthenticatorTest {
         } catch (EmailException e) {
             throw new AssertionError(e);
         }
+    }
+
+    private void lockedOut(boolean temporarily, boolean permanently) {
+        lenient().when(realm.isBruteForceProtected()).thenReturn(true);
+        lenient().when(protector.isTemporarilyDisabled(session, realm, user)).thenReturn(temporarily);
+        lenient().when(protector.isPermanentlyLockedOut(session, realm, user)).thenReturn(permanently);
+    }
+
+    /*
+     * The code page must not tell a code guesser that the account got locked
+     * out: the lockout reads exactly like a wrong code, as on Keycloak's own
+     * OTP form and the AMFA TOTP step.
+     */
+
+    @Test
+    void aWrongCodeSaysTheCodeIsInvalid() {
+        authenticator.authenticate(context);
+        guess(wrong());
+
+        verify(form).setError("invalidTotpMessage");
+    }
+
+    @Test
+    void aTemporaryLockoutReadsLikeAWrongCode() {
+        authenticator.authenticate(context);
+        lockedOut(true, false);
+        guess(notes.get(MfaUtils.AUTH_NOTE_OTP_CODE));
+
+        verify(form).setError("accountTemporarilyDisabledMessageTotp");
+        verify(context, never()).success();
+        verify(context).forceChallenge(codePage);
+    }
+
+    @Test
+    void aPermanentLockoutReadsLikeAWrongCode() {
+        authenticator.authenticate(context);
+        lockedOut(false, true);
+        guess(notes.get(MfaUtils.AUTH_NOTE_OTP_CODE));
+
+        verify(form).setError("accountPermanentlyDisabledMessageTotp");
+        verify(context, never()).success();
+        verify(context).forceChallenge(codePage);
     }
 }

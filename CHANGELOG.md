@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The email code step no longer gives a lockout away. Once brute-force
+  protection locked the account out, the code page said "Invalid username or
+  password.", which no wrong code shows, so a code guesser could tell the
+  account had been locked. A wrong code also showed the raw key
+  `invalidOTPMessage`, which no theme defines. Both now show Keycloak's
+  "Invalid authenticator code.", as Keycloak's own OTP form and the TOTP step
+  do. A permanent lockout still ends on Keycloak's "Account is disabled" page
+
 - The Adaptive MFA admin page's settings and scoring calls say what is wrong.
   A realm without an engine endpoint, or without the `adaptive-auth-api` client
   or its secret, gets a 409 saying Adaptive MFA is not set up for the realm and

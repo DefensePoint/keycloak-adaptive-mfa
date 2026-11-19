@@ -245,9 +245,13 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
             return;
         }
 
+        // Keycloak's own wrong-code message, which the lockout below shares, so
+        // the page reads the same whether the code was wrong or the account is
+        // locked out. The key this used before is defined nowhere, so the page
+        // showed it raw.
         LoginFormsProvider form = context.form()
                 .setAttribute("email", context.getUser().getEmail())
-                .setError("invalidOTPMessage");
+                .setError("invalidTotpMessage");
         context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
                 form.createForm("login-mfa-email.ftl"));
     }
@@ -296,9 +300,14 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
             return false;
         }
         context.getEvent().user(user).error(bruteForceError);
+        // The *Totp variants, as on Keycloak's own OTP form and the TOTP step:
+        // they read like a wrong code ("Invalid authenticator code."), so the
+        // page does not tell a code guesser that the account got locked out.
+        // The plain variants read "Invalid username or password.", which no
+        // wrong code shows, so the change of message gave the lockout away.
         String message = "user_temporarily_disabled".equals(bruteForceError)
-                ? "accountTemporarilyDisabledMessage"
-                : "accountPermanentlyDisabledMessage";
+                ? "accountTemporarilyDisabledMessageTotp"
+                : "accountPermanentlyDisabledMessageTotp";
         Response challengeResponse = context.form()
                 .setError(message)
                 .createForm("login-mfa-email.ftl");
