@@ -99,4 +99,78 @@ class ConditionalUserConfiguredAdaptiveAuthAuthenticatorTest {
         setupMocks("2", "3", "GREATER_OR_EQUAL");
         assertFalse(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
     }
+
+    // --- A login AMFA did not score (no risk note) ---
+
+    @Test
+    void matchCondition_unscored_neverMatchesLessOrEqual() {
+        // A sub-flow meant for low-risk logins must not run for one AMFA never scored.
+        setupMocks(null, "1", "LESS_OR_EQUAL");
+        assertFalse(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_unscored_neverMatchesEqual() {
+        // Without a level, the condition compares against -1, which an unscored login also has.
+        setupMocks(null, null, "EQUAL");
+        assertFalse(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_unscored_matchesGreaterOrEqualAsTheHighestRisk() {
+        // A step-up for risky logins must run for a login AMFA never scored, rather
+        // than let it in on the password alone.
+        setupMocks(null, "2", "GREATER_OR_EQUAL");
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_unscored_matchesTheHighestLevel() {
+        setupMocks(null, "4", "GREATER_OR_EQUAL");
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_unscored_unknownOperatorAlsoMatchesAsTheHighestRisk() {
+        setupMocks(null, "2", "MORE_THAN");
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_unscored_greaterOrEqualWithoutALevelStillMatches() {
+        setupMocks(null, null, "GREATER_OR_EQUAL");
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    // --- Comparison and level the condition cannot use ---
+
+    @Test
+    void matchCondition_unknownOperator_comparesAsGreaterOrEqual() {
+        setupMocks("3", "2", "MORE_THAN");
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_withoutConfig_doesNotFailTheLogin() {
+        // A condition step added but never configured compares as GREATER_OR_EQUAL against
+        // no level, so it matches and the step-up runs, as a config without the level does.
+        when(flowContext.getSession()).thenReturn(session);
+        when(session.getContext()).thenReturn(keycloakContext);
+        when(keycloakContext.getAuthenticationSession()).thenReturn(authSession);
+        when(authSession.getAuthNote(AdaptiveAuthAuthenticator.AUTH_NOTE)).thenReturn("1");
+        when(flowContext.getAuthenticatorConfig()).thenReturn(null);
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_levelThatIsNotANumber_countsAsNoLevel() {
+        setupMocks("1", "high", "LESS_OR_EQUAL");
+        assertFalse(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
+
+    @Test
+    void matchCondition_levelThatIsNotANumber_stillStepsUp() {
+        setupMocks("1", "high", "GREATER_OR_EQUAL");
+        assertTrue(ConditionalUserConfiguredAdaptiveAuthAuthenticator.SINGLETON.matchCondition(flowContext));
+    }
 }

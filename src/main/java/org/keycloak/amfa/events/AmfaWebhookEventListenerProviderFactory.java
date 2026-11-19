@@ -18,19 +18,28 @@ public class AmfaWebhookEventListenerProviderFactory implements EventListenerPro
     public static final String PROVIDER_ID = "amfa-webhook";
 
     /**
-     * Lanes the webhooks are sent on, each sending one at a time. They carry
-     * as many webhooks a second as there are lanes divided by the engine's
+     * Threads the webhooks are sent on, each sending one at a time. They carry
+     * as many webhooks a second as there are threads divided by the engine's
      * answer time: thousands from a healthy engine, and still 32 a second from
-     * one that takes a second per webhook. Idle lanes cost a parked thread each.
+     * one that takes a second per webhook. An idle thread stays parked.
      */
-    private static final int SENDER_LANES = 32;
+    private static final int SENDER_THREADS = 32;
 
     /**
-     * Webhooks each lane holds while the engine is slow or down. A webhook's
-     * token expires 30 seconds after the login, so a deeper queue would only
-     * hold webhooks the engine refuses anyway.
+     * Webhooks each user can have waiting while the engine is slow or down.
+     * One user's webhooks are sent one at a time, and a webhook's token
+     * expires 30 seconds after the login, so a user's queue can only deliver
+     * as many as the engine answers in that time: 250 at 120 ms per webhook,
+     * but about 6 from an engine that does not answer within the 5 second
+     * timeout. The rest then wait past their expiry and are dropped with a
+     * warning that says so, next to the timed out deliveries. A smaller queue
+     * would not help that case, and would drop webhooks a healthy engine still
+     * has time for when one account gets many logins at once.
      */
-    private static final int SENDER_QUEUE_PER_LANE = 250;
+    private static final int SENDER_QUEUE_PER_USER = 250;
+
+    /** Webhooks all users together can have waiting, which bounds the memory they take. */
+    private static final int SENDER_QUEUE_TOTAL = SENDER_THREADS * SENDER_QUEUE_PER_USER;
 
     /** How long the waiting webhooks get to go out when Keycloak shuts down. */
     private static final long SENDER_SHUTDOWN_WAIT_MILLIS = 5000;
@@ -44,7 +53,7 @@ public class AmfaWebhookEventListenerProviderFactory implements EventListenerPro
 
     @Override
     public void init(Config.Scope config) {
-        sender = new AmfaWebhookSender(SENDER_LANES, SENDER_QUEUE_PER_LANE);
+        sender = new AmfaWebhookSender(SENDER_THREADS, SENDER_QUEUE_PER_USER, SENDER_QUEUE_TOTAL);
     }
 
     @Override

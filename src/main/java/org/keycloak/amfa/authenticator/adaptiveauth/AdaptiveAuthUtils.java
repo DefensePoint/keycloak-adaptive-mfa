@@ -12,6 +12,9 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 @Slf4j
 public class AdaptiveAuthUtils {
@@ -46,6 +49,16 @@ public class AdaptiveAuthUtils {
     public static final int MAX_RISK_LEVEL = 4;
 
     /**
+     * Per realm, the unusable {@code fallbackRisk} value last warned about. The
+     * value is read on every login, so without this a misconfigured realm logged
+     * the same warning on every login. A realm is warned about again when its
+     * value changes to another unusable one, or is fixed and later broken again.
+     * Bounded by the number of realms.
+     */
+    private static final ConcurrentMap<String, String> WARNED_FALLBACK_RISK = new ConcurrentHashMap<>();
+    private static final String UNSET = "\0unset";
+
+    /**
      * The risk level to apply when the engine cannot be consulted.
      *
      * <p>Read from the realm's {@code fallbackRisk} attribute. Every failure to read a
@@ -70,10 +83,12 @@ public class AdaptiveAuthUtils {
                 : realm.getAttribute(ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL);
 
         if (configured == null || configured.trim().isEmpty()) {
-            log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL
-                    + "' is not set" + realmSuffix(realm) + "; using Risk "
-                    + HIGH_RISK_LEVEL + " when the engine cannot be reached. Set it to a "
-                    + "value between " + MIN_RISK_LEVEL + " and " + MAX_RISK_LEVEL + ".");
+            if (firstWarningFor(realm, configured == null ? UNSET : configured)) {
+                log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL
+                        + "' is not set" + realmSuffix(realm) + "; using Risk "
+                        + HIGH_RISK_LEVEL + " when the engine cannot be reached. Set it to a "
+                        + "value between " + MIN_RISK_LEVEL + " and " + MAX_RISK_LEVEL + ".");
+            }
             return HIGH_RISK_LEVEL;
         }
 
@@ -81,34 +96,59 @@ public class AdaptiveAuthUtils {
         try {
             level = Integer.parseInt(configured.trim());
         } catch (NumberFormatException e) {
-            log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL + "' is '"
-                    + configured + "'" + realmSuffix(realm) + ", which is not a number; "
-                    + "using Risk " + HIGH_RISK_LEVEL + ".");
+            if (firstWarningFor(realm, configured)) {
+                log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL + "' is '"
+                        + configured + "'" + realmSuffix(realm) + ", which is not a number; "
+                        + "using Risk " + HIGH_RISK_LEVEL + ".");
+            }
             return HIGH_RISK_LEVEL;
         }
 
         if (level < MIN_RISK_LEVEL || level > MAX_RISK_LEVEL) {
-            log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL + "' is "
-                    + level + realmSuffix(realm) + ", outside the valid range "
-                    + MIN_RISK_LEVEL + "-" + MAX_RISK_LEVEL + "; using Risk "
-                    + HIGH_RISK_LEVEL + ".");
+            if (firstWarningFor(realm, configured)) {
+                log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL + "' is "
+                        + level + realmSuffix(realm) + ", outside the valid range "
+                        + MIN_RISK_LEVEL + "-" + MAX_RISK_LEVEL + "; using Risk "
+                        + HIGH_RISK_LEVEL + ".");
+            }
             return HIGH_RISK_LEVEL;
         }
 
+        WARNED_FALLBACK_RISK.remove(realmKey(realm));
         return level;
+    }
+
+    /** Whether this unusable value is new for the realm, recording it if so. */
+    private static boolean firstWarningFor(RealmModel realm, String value) {
+        return !Objects.equals(WARNED_FALLBACK_RISK.put(realmKey(realm), value), value);
+    }
+
+    private static String realmKey(RealmModel realm) {
+        return realm == null ? "" : String.valueOf(realm.getId());
     }
 
     /**
      * Whether the realm's AMFA switch (the admin page's "Enabled") is off.
      *
-     * <p>Only an explicit {@code false} counts. A realm that never saved the admin
-     * page has no {@code adaptiveToggle} attribute, and a realm update that sends an
-     * attributes map without it removes it, so treating a missing value as off would
-     * silently switch AMFA off for those realms.
+     * <p>Only an explicit {@code false} counts. The login steps run only in a realm
+     * whose flow contains them, so a realm without the attribute is one that put
+     * AMFA in its login on purpose. It may have lost the attribute: a realm update
+     * through the admin REST API replaces the whole attribute map, so one PUT that
+     * omits the AMFA attributes removes the switch, the endpoint and the failure
+     * mode together. Treating that as off would let its logins through as low
+     * risk; treated as on, a realm without an endpoint gets the fallback level (see
+     * {@link #getFallbackRiskLevel}), or is denied in mandatory failure mode. The
+     * login webhook and the admin page read the switch the same way.
      */
     public static boolean isSwitchedOff(RealmModel realm) {
         String toggle = realm == null ? null : realm.getAttribute(ADAPTIVE_AUTH_TOGGLE);
         return toggle != null && "false".equalsIgnoreCase(toggle.trim());
+    }
+
+    /** The realm's engine endpoint, or null when it has none. */
+    public static String engineEndpoint(RealmModel realm) {
+        String endpoint = realm == null ? null : realm.getAttribute(ADAPTIVE_AUTH_ENDPOINT);
+        return endpoint == null || endpoint.isBlank() ? null : endpoint.trim();
     }
 
     /**
@@ -200,7 +240,14 @@ public class AdaptiveAuthUtils {
         // not get re-caught by an enclosing catch (Exception e) here and reported
         // under the wrong message with a doubled log line.
         RealmModel realm = authSession.getRealm();
-        String url = realm.getAttribute(ADAPTIVE_AUTH_ENDPOINT);
+        String url = engineEndpoint(realm);
+        if (url == null) {
+            // Nothing to ask: no token, and no request to "null/decision".
+            return handleEngineFailure(realm, defaultRiskLevel,
+                    "The realm has the AMFA step in its login flow but no engine endpoint ("
+                            + ADAPTIVE_AUTH_ENDPOINT + "); set it on the realm's Adaptive MFA page, "
+                            + "or switch AMFA off there", null);
+        }
         AdaptiveAuthService adaptiveAuthService = new AdaptiveAuthService(session);
 
         String token;

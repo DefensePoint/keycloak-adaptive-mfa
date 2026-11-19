@@ -92,7 +92,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
      * How long to wait when delivering an event, before giving up on it.
      *
      * <p>Delivery runs in the background, so this no longer holds up the login,
-     * but it still bounds how long one webhook occupies its lane: measured against
+     * but it still bounds how long one webhook occupies its thread: measured against
      * an engine that drops packets, an unbounded call sat for 75 seconds. Same 5s
      * budget as the two engine calls.
      */
@@ -157,7 +157,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
         }
         try {
             RealmModel realm = session.realms().getRealm(event.getRealmId());
-            if (realm == null || !amfaEnabled(realm)) {
+            if (realm == null || AdaptiveAuthUtils.isSwitchedOff(realm)) {
                 return;
             }
             String endpoint = realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT);
@@ -175,7 +175,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
             SimpleHttp http = AmfaHttp.createDetached(session, WEBHOOK_TIMEOUT_MILLIS);
             EventType type = event.getType();
             String realmName = realm.getName();
-            boolean queued = sender.submit(laneKey(event),
+            boolean queued = sender.submit(queueKey(event),
                     () -> deliver(http, url, signedPayload, signedAt + TOKEN_LIFETIME_SECONDS, type, realmName));
             if (!queued) {
                 log.warn("AMFA webhook dropped for event {} (realm {}): the send queue is full",
@@ -189,7 +189,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
     }
 
     /**
-     * Send one signed event. Runs on a sender lane, after the session may have
+     * Send one signed event. Runs on a sender thread, after the session may have
      * closed, so it touches nothing but its arguments. A webhook that waited past
      * its token's expiry is not sent: the engine would refuse it.
      */
@@ -215,17 +215,23 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
     }
 
     /**
-     * The lane an event is sent on: the user it is about, so one user's events
-     * keep their order. A refused login that Keycloak emitted without a user
-     * goes by the user AMFA scored.
+     * The queue an event is sent from: the user it is about, so one user's
+     * events keep their order. A refused login that Keycloak emitted without a
+     * user goes by the user AMFA scored. An event with no user at all, such as
+     * a login with an unknown username, has no order to keep, so it goes by its
+     * own ID: a burst of them is sent in parallel instead of queueing as the
+     * realm's, where a full queue would drop them.
      */
-    private static String laneKey(Event event) {
+    private static String queueKey(Event event) {
         if (event.getUserId() != null) {
             return event.getUserId();
         }
         Map<String, String> details = event.getDetails() != null ? event.getDetails() : Map.of();
         String scored = details.get(EventBuilderHelper.USER_ID_DETAIL);
-        return scored != null ? scored : event.getRealmId();
+        if (scored != null) {
+            return scored;
+        }
+        return event.getId() != null ? event.getId() : event.getRealmId();
     }
 
     @Override
@@ -235,10 +241,6 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
 
     @Override
     public void close() {
-    }
-
-    private boolean amfaEnabled(RealmModel realm) {
-        return Boolean.parseBoolean(realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_TOGGLE));
     }
 
     /**
@@ -342,8 +344,8 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
      * scored it, so the engine can link the outcome to that decision even when
      * it no longer has the decision open: a login slower than the engine's
      * 5 minute pointer, or one where an earlier LOGIN_ERROR closed it as failed
-     * (Keycloak's own OTP form reports a wrong code that way; AMFA's code steps
-     * do not). Every other event keeps its own id, including such a
+     * (a wrong code on Keycloak's own OTP form or on AMFA's code steps is
+     * reported that way). Every other event keeps its own id, including such a
      * LOGIN_ERROR, because the engine rejects a second event with the same id
      * and would then lose the LOGIN that follows the right code.
      */

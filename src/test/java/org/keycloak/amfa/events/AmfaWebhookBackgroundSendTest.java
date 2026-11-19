@@ -177,10 +177,24 @@ class AmfaWebhookBackgroundSendTest {
     }
 
     @Test
-    void aRefusedLoginWithoutAUserGoesOnTheScoredUsersLane() {
+    void aRefusedLoginWithoutAUserGoesInTheScoredUsersQueue() {
         provider.onEvent(event(EventType.LOGIN_ERROR, null, Map.of(EventBuilderHelper.USER_ID_DETAIL, "user-2")));
 
         queuedFor("user-2");
+    }
+
+    @Test
+    void refusedLoginsWithoutAnyUserEachGoByTheirOwnId() {
+        Event first = event(EventType.LOGIN_ERROR, null, Map.of());
+        first.setId("event-1");
+        Event second = event(EventType.LOGIN_ERROR, null, Map.of());
+        second.setId("event-2");
+
+        provider.onEvent(first);
+        provider.onEvent(second);
+
+        verify(sender).submit(eq("event-1"), any());
+        verify(sender).submit(eq("event-2"), any());
     }
 
     @Test

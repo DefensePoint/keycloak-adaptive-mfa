@@ -76,7 +76,6 @@ class AmfaWebhookFailureAttributionTest {
     org.keycloak.models.SingleUseObjectProvider singleUse;
 
     @Mock
-
     AmfaWebhookSender sender;
 
 

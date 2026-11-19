@@ -39,6 +39,14 @@ public class EventBuilderHelper {
     public static final String USER_ID_DETAIL = "amfa_user_id";
 
     /**
+     * The ID AMFA stores this login under: the decision's ID, which the login
+     * webhook reuses for the LOGIN it reports. A monitoring tool reading
+     * Keycloak's events joins the event to AMFA's record of the same login by
+     * it; without it the two cannot be told apart from two separate logins.
+     */
+    public static final String AMFA_EVENT_ID_DETAIL = "amfa_event_id";
+
+    /**
      * Prefix for the user-session notes that mirror the event details above.
      * A brokered (SSO) login's final LOGIN event is emitted by Keycloak's
      * broker code with a fresh EventBuilder, so the details never reach it;
@@ -58,11 +66,23 @@ public class EventBuilderHelper {
         detailAndUserSessionNote(eventBuilder, authenticationSession, SCREEN_RESOLUTION_DETAIL, SCREEN_RESOLUTION);
         detailAndUserSessionNote(eventBuilder, authenticationSession, LOCALE_DETAIL, LOCAL);
         detailAndUserSessionNote(eventBuilder, authenticationSession, AUTH_CONTEXT_HASH_DETAIL, AuthContextAuthenticator.AUTH_CONTEXT_HASH);
+        eventBuilder.detail(AMFA_EVENT_ID_DETAIL, authenticationSession.getAuthNote(EVENT_ID_NOTE));
         eventBuilder.detail(DECISION_SOURCE_DETAIL, authenticationSession.getAuthNote(DECISION_SOURCE_NOTE));
         UserModel user = authenticationSession.getAuthenticatedUser();
         if (user != null) {
             eventBuilder.detail(USER_ID_DETAIL, user.getId());
         }
+    }
+
+    /**
+     * Record a failed attempt at a code step as a LOGIN_ERROR with {@code error},
+     * carrying the login's AMFA details like the LOGIN of a successful one. Without
+     * the details a monitoring tool cannot tie the failure to the login AMFA scored.
+     */
+    public static void recordError(EventBuilder eventBuilder, AuthenticationSessionModel authenticationSession,
+            UserModel user, String error) {
+        addExtraDetailsToEvent(eventBuilder, authenticationSession);
+        eventBuilder.user(user).error(error);
     }
 
     /** For the four values the webhook payload carries: an event detail and its user-session note. */

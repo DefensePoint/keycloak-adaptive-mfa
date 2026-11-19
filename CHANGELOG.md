@@ -7,7 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The events of a login AMFA scored carry an `amfa_event_id` detail: the ID of
+  the engine's decision, which the login webhook also reports the LOGIN under.
+  A monitoring tool that reads both Keycloak's events and the engine's records
+  can then join a LOGIN to the engine's record of it and show the login once
+  instead of twice. An SSO login's LOGIN event carries it when the
+  `amfa-login-event-details` required action is registered, as for the other
+  AMFA details
+
+### Changed
+
+- A wrong code on the AMFA email or TOTP step is recorded as a `LOGIN_ERROR`
+  event, as Keycloak's own OTP form records one: `invalid_user_otp` on the
+  email step and `invalid_user_credentials` on the TOTP step, where an empty
+  code counts the same way. Before, a wrong code counted towards brute-force
+  protection but left no event, so a monitoring tool saw no code guessing on
+  these steps. These events, and the email step's limit and the lockout
+  refusals of both steps, carry the login's AMFA details, such as `risk_level`
+  and `amfa_event_id`. The login webhook sends them to the engine like any
+  other `LOGIN_ERROR`; the LOGIN after the right code stays linked to its
+  decision. The engine counts them among the user's failed logins of the last
+  24 hours, as it already did for wrong codes on Keycloak's own OTP form: after
+  two, a login the engine finds very unfamiliar, or one after two high-risk
+  logins, is raised from Risk 3 to Risk 4
+
+- Login webhooks wait in a queue per user instead of on 32 fixed lanes, each
+  shared by the users that fell on it. One user's webhooks still go out one at
+  a time, in the order Keycloak emitted them. Before, a user with many
+  webhooks waiting, as in a password-guessing run on one account while the
+  engine was slow, held up every other user on their lane, whose webhooks
+  could then wait past their 30 second token and be dropped. Now such a user
+  holds at most one of the 32 sending threads and takes turns with the
+  others. A user can have 250 webhooks waiting, and all users together 8000,
+  the same total as before. A webhook for an event with no user at all, such
+  as a login with an unknown username, goes by the event's own ID instead of
+  the realm's, so a burst of them is sent in parallel instead of queueing
+  behind one another, after which further ones were dropped
+
 ### Fixed
+
+- A realm whose `fallbackRisk` is missing, not a number or outside 1-4 gets
+  one warning in the log for that value, not one on every login. Another
+  unusable value, or the same one after it was fixed in between, is warned
+  about again. The login still uses Risk 3 as the fallback, as before
+
+- The email code page shows the address masked, as `jon*****@example.com`,
+  not in full. The page comes after the password and before the second
+  factor, so someone with only the password learned the account's address
+  from it. The domain stays, so the user still knows which mailbox to check
+
+- The debug line logged before each call to the risk engine no longer lets a
+  value split it. It logged the User-Agent, IP address, client, realm, group,
+  the engine's own auth-context hash and the engine URL as they were, so a
+  carriage return or line feed in any of them started a new, forged log line.
+  They are now sanitized the same way as the authenticator's own debug line
+
+- The TOTP step checks the code against the authenticator device the user
+  picked on the code page, as Keycloak's own OTP form does. It always used the
+  default device, so a user with two devices could only log in with the
+  default one's code. Without a choice it is still the default device. The
+  choice is kept selected after a wrong code and recorded on the event as
+  `selected_credential_id`. A picked ID that is not one of the user's devices
+  is refused like a wrong code
+
+- The email code step no longer gives a lockout away. Once brute-force
+  protection locked the account out, the code page said "Invalid username or
+  password.", which no wrong code shows, so a code guesser could tell the
+  account had been locked. A wrong code also showed the raw key
+  `invalidOTPMessage`, which no theme defines. Both now show Keycloak's
+  "Invalid authenticator code.", as Keycloak's own OTP form and the TOTP step
+  do. A permanent lockout still ends on Keycloak's "Account is disabled" page
+
+- The Adaptive MFA admin page's settings and scoring calls say what is wrong.
+  A realm without an engine endpoint, or without the `adaptive-auth-api` client
+  or its secret, gets a 409 saying Adaptive MFA is not set up for the realm and
+  what is missing; before, the engine was called without a token, or at a URL
+  with no host, and the page showed "AMFA engine returned HTTP 401: Malformed
+  token" or "AMFA engine unreachable: null". A token request that fails gets a
+  502 with what the token endpoint answered. An unreachable engine is described
+  in words: an unknown host is named as one, a timeout says how long was
+  waited, and a refused connection keeps its detail
+
+- The AMFA TOTP step refuses a code, even the right one, while the realm's
+  brute-force protection has the account locked out. Before, wrong codes on
+  this step locked the account, but the right code still logged it in and
+  cleared the lockout, so the lockout did not stop a code-guessing run. As on
+  Keycloak's own OTP form, a locked-out account is told "Invalid authenticator
+  code", which does not reveal the lockout, and the refusal is not counted as
+  another failed login. The email code step already had this check
+
+- The email code step no longer sends a new code every time it is shown. A
+  page reload showed the step again and sent a new email each time, without
+  limit, so a reload loop could flood the user's inbox and hand out fresh codes
+  to guess at. A reload now shows the code already sent. A new code is sent
+  only on Resend, when the code has expired or after three wrong guesses, and
+  one login gets at most three codes; the step's new "Codes per login" setting
+  changes that. Resend at the limit keeps the code already sent. Once no
+  valid code is left, the step shows that too many codes were requested, and
+  the user starts the login again; this is recorded once per login, as a
+  `LOGIN_ERROR` event (`reached_resend_otp_limit`). A code whose email could
+  not be sent does not count. The limit is per login: a new login allows as
+  many codes again, so a flood of emails is slowed, not capped.
 
 - Switching AMFA off for a realm (the admin page's "Enabled" switch, realm
   attribute `adaptiveToggle=false`) now takes effect at login: the engine is
@@ -15,10 +117,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as low risk (risk level 1, decision source `amfa_off`). That is the level a
   low-risk answer from the engine gives, so a step-up set at level 2 or above
   does not fire, while a flow branch for level 1 (`EQUAL` or `LESS_OR_EQUAL`)
-  runs for every login. A realm without the attribute keeps AMFA as before.
-  While AMFA is off the engine records no logins either (the login webhook was
-  already off), so after switching back on its history-based signals, such as
-  inactive account, do not count the logins made in between
+  runs for every login. While AMFA is off the engine records no logins
+  either (the login webhook was already off), so after switching back on its
+  history-based signals, such as inactive account, do not count the logins
+  made in between
+- The login webhook follows the same switch as the login steps: only an
+  explicit `adaptiveToggle=false` switches AMFA off, and a realm without the
+  attribute is on. It goes to every realm that is not switched off and has an
+  engine endpoint (`adaptiveAuthEndpoint`). Before, it went only to a realm
+  with `adaptiveToggle=true`, so a realm set up through the admin REST API,
+  which has an endpoint but no switch, was risk-checked at login while the
+  engine never heard of its logins, and a hand-set value such as `yes` sent
+  logins to the engine without the webhook
+- A realm with the AMFA step in its login flow but no engine endpoint, for
+  example after an admin REST update that replaced the realm's attributes
+  without the AMFA ones, no longer sends the risk request to an invalid URL.
+  The risk step logs `ADAPTIVE_AUTH_ENGINE_UNREACHABLE` naming the missing
+  endpoint and applies the failure mode, so the login gets the fallback risk
+  level, or is denied in `mandatory` mode; the auth context step sends nothing.
+  Upgrade the admin UI with it: its matching release shows such a realm as on
+  and asks for the endpoint
+- The risk-level condition ("Conditional - User Risk Level") counts a login
+  AMFA did not score as the highest risk, for example when the flow has no
+  risk step before it. Such a login no longer matches "equal" or "less or
+  equal", so a sub-flow meant for low-risk logins no longer runs for it, and
+  it now matches "greater or equal", so a step-up runs instead of the login
+  going on with the password alone. A warning that the condition got an
+  unscored login is logged once per realm and condition. A condition
+  without a config, or with a level that is not a number, no longer fails
+  the login: it compares against no level, so "greater or equal" matches
+  and the step-up runs, and the comparison or level that cannot be used is
+  logged once
 
 ## [1.0.1] - 2026-09-22
 

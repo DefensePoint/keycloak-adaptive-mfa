@@ -6,6 +6,7 @@ package org.keycloak.amfa.authenticator.mfa.email;
 import org.jboss.logging.Logger;
 import org.keycloak.amfa.authenticator.mfa.MfaUtils;
 import org.keycloak.amfa.util.Constants;
+import org.keycloak.amfa.util.EmailUtils;
 import org.keycloak.amfa.util.EventBuilderHelper;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
@@ -14,6 +15,7 @@ import org.keycloak.authentication.authenticators.util.AuthenticatorUtils;
 import org.keycloak.email.EmailException;
 import org.keycloak.email.EmailTemplateProvider;
 import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -40,12 +42,28 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
      */
     static final int MAX_ATTEMPTS_PER_CODE = 3;
 
+    /** Event error when a login has used up its codes. */
+    static final String CODE_LIMIT_REACHED = "reached_resend_otp_limit";
+
+    /** Event error for a wrong code. */
+    static final String WRONG_CODE = "invalid_user_otp";
+
     /**
      * How long an issued code stays valid, whether or not it is ever guessed
      * wrong. Keeps a code from a stale or abandoned attempt from still being
      * usable long after the login that requested it.
      */
     static final int CODE_TTL_SECONDS = 300;
+
+    /** Step setting: how many codes one login may send, the first included. */
+    static final String CONFIG_CODES_PER_LOGIN = "codesPerLogin";
+
+    /**
+     * Codes per login when the step has no usable setting: the first code and
+     * two more, each from Resend, from a code expiring or from three wrong
+     * guesses.
+     */
+    static final int DEFAULT_CODES_PER_LOGIN = 3;
 
     protected final MfaUtils mfaUtils;
 
@@ -59,27 +77,84 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
             return;
         }
 
-        UserModel user = context.getUser();
-        RealmModel realm = context.getRealm();
-        KeycloakSession session = context.getSession();
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
 
+        // Showing the step again, as a page refresh does, shows the code that
+        // was sent and is still valid. It sends nothing, so refreshing cannot
+        // send an unlimited number of emails or get fresh codes to guess at.
+        if (mfaUtils.getStoredCode(authSession) != null
+                && !mfaUtils.isExpired(authSession, CODE_TTL_SECONDS)) {
+            challengeWithForm(context);
+            return;
+        }
+        mfaUtils.clearCode(authSession);
+
+        // Each new code counts against the step's limit for this login, and at
+        // the limit the step ends: the user starts the login again. A plain
+        // challenge, not a failure, so Keycloak's brute-force protection does
+        // not count it; the wrong guesses that may have led here were counted
+        // already. The limit is recorded once per login: the engine counts each
+        // LOGIN_ERROR among the user's failed logins, so recording every showing
+        // would let reloads of this page raise the user's risk for later logins.
+        if (mfaUtils.getSentCount(authSession) >= codesPerLogin(context)) {
+            if (mfaUtils.markLimitRecorded(authSession)) {
+                EventBuilderHelper.recordError(context.getEvent(), authSession, context.getUser(), CODE_LIMIT_REACHED);
+            }
+            context.challenge(context.form()
+                    .setError("mfaCodeLimitReached")
+                    .createErrorPage(Response.Status.BAD_REQUEST));
+            return;
+        }
+
+        sendCode(context);
+        challengeWithForm(context);
+    }
+
+    /**
+     * Send a new code. A code whose email could not be sent is dropped and not
+     * counted, so the next showing of the step tries again.
+     */
+    private void sendCode(AuthenticationFlowContext context) {
+        UserModel user = context.getUser();
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
         String code = mfaUtils.generateCode();
-        mfaUtils.storeCode(context.getAuthenticationSession(), code);
+        mfaUtils.storeCode(authSession, code);
 
         try {
             Map<String, Object> attrs = new HashMap<>();
             attrs.put("code", code);
             attrs.put("email", user.getEmail());
-            session.getProvider(EmailTemplateProvider.class)
-                    .setRealm(realm)
+            context.getSession().getProvider(EmailTemplateProvider.class)
+                    .setRealm(context.getRealm())
                     .setUser(user)
-                    .setAuthenticationSession(context.getAuthenticationSession())
+                    .setAuthenticationSession(authSession)
                     .send("mfaOTPSubject", Collections.emptyList(), "mfa-email-otp.ftl", attrs);
+            mfaUtils.countSent(authSession);
         } catch (EmailException e) {
             log.errorf(e, "Failed to send email OTP to user %s", user.getEmail());
+            mfaUtils.clearCode(authSession);
         }
+    }
 
-        challengeWithForm(context);
+    /**
+     * The step's codes-per-login setting, or {@link #DEFAULT_CODES_PER_LOGIN}
+     * when it has none or it is not a whole number of at least one.
+     */
+    private int codesPerLogin(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        String configured = config == null || config.getConfig() == null
+                ? null : config.getConfig().get(CONFIG_CODES_PER_LOGIN);
+        if (configured != null) {
+            try {
+                int limit = Integer.parseInt(configured.trim());
+                if (limit >= 1) {
+                    return limit;
+                }
+            } catch (NumberFormatException e) {
+                // falls through to the default
+            }
+        }
+        return DEFAULT_CODES_PER_LOGIN;
     }
 
     @Override
@@ -92,6 +167,14 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
 
         if (formData.containsKey("resend")) {
+            // At the limit no new code can be sent. A code that is still valid
+            // is kept, so the user can still enter it, and the page says so.
+            if (mfaUtils.getStoredCode(authSession) != null
+                    && !mfaUtils.isExpired(authSession, CODE_TTL_SECONDS)
+                    && mfaUtils.getSentCount(authSession) >= codesPerLogin(context)) {
+                challengeWithForm(context, "mfaNoMoreCodes");
+                return;
+            }
             // A fresh code, not a guess: resets this code's own attempt/TTL
             // budget, but NOT the brute-force counter below. An attacker
             // cannot dodge the account+address lockout by asking for a new
@@ -104,6 +187,13 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
 
         if (mfaUtils.isExpired(authSession, CODE_TTL_SECONDS)) {
             mfaUtils.clearCode(authSession);
+            authenticate(context);
+            return;
+        }
+
+        // No code to check against, as after the limit or a failed send: not a
+        // guess, so nothing is counted, and the step is shown as it stands.
+        if (mfaUtils.getStoredCode(authSession) == null) {
             authenticate(context);
             return;
         }
@@ -147,6 +237,10 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         // needs an explicit call or it would silently go free, undermining
         // the "every wrong guess counts" guarantee the resend branch above
         // documents.
+        //
+        // Either way the guess is recorded as a LOGIN_ERROR, as Keycloak's own OTP
+        // form records one, so a monitoring tool sees code guessing on this step.
+        EventBuilderHelper.recordError(context.getEvent(), authSession, context.getUser(), WRONG_CODE);
         int attempts = mfaUtils.incrementAttempts(authSession);
 
         if (attempts >= MAX_ATTEMPTS_PER_CODE) {
@@ -159,9 +253,13 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
             return;
         }
 
+        // Keycloak's own wrong-code message, which the lockout below shares, so
+        // the page reads the same whether the code was wrong or the account is
+        // locked out. The key this used before is defined nowhere, so the page
+        // showed it raw.
         LoginFormsProvider form = context.form()
-                .setAttribute("email", context.getUser().getEmail())
-                .setError("invalidOTPMessage");
+                .setAttribute("email", EmailUtils.maskEmailAddress(context.getUser().getEmail()))
+                .setError("invalidTotpMessage");
         context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
                 form.createForm("login-mfa-email.ftl"));
     }
@@ -209,10 +307,15 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         if (bruteForceError == null) {
             return false;
         }
-        context.getEvent().user(user).error(bruteForceError);
+        EventBuilderHelper.recordError(context.getEvent(), context.getAuthenticationSession(), user, bruteForceError);
+        // The *Totp variants, as on Keycloak's own OTP form and the TOTP step:
+        // they read like a wrong code ("Invalid authenticator code."), so the
+        // page does not tell a code guesser that the account got locked out.
+        // The plain variants read "Invalid username or password.", which no
+        // wrong code shows, so the change of message gave the lockout away.
         String message = "user_temporarily_disabled".equals(bruteForceError)
-                ? "accountTemporarilyDisabledMessage"
-                : "accountPermanentlyDisabledMessage";
+                ? "accountTemporarilyDisabledMessageTotp"
+                : "accountPermanentlyDisabledMessageTotp";
         Response challengeResponse = context.form()
                 .setError(message)
                 .createForm("login-mfa-email.ftl");
@@ -221,8 +324,16 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
     }
 
     private void challengeWithForm(AuthenticationFlowContext context) {
+        challengeWithForm(context, null);
+    }
+
+    /** The code page, with {@code error} as its message when not null. */
+    private void challengeWithForm(AuthenticationFlowContext context, String error) {
         LoginFormsProvider form = context.form()
-                .setAttribute("email", context.getUser().getEmail());
+                .setAttribute("email", EmailUtils.maskEmailAddress(context.getUser().getEmail()));
+        if (error != null) {
+            form.setError(error);
+        }
         Response challenge = form.createForm("login-mfa-email.ftl");
         context.challenge(challenge);
     }
