@@ -92,7 +92,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
      * How long to wait when delivering an event, before giving up on it.
      *
      * <p>Delivery runs in the background, so this no longer holds up the login,
-     * but it still bounds how long one webhook occupies its lane: measured against
+     * but it still bounds how long one webhook occupies its thread: measured against
      * an engine that drops packets, an unbounded call sat for 75 seconds. Same 5s
      * budget as the two engine calls.
      */
@@ -175,7 +175,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
             SimpleHttp http = AmfaHttp.createDetached(session, WEBHOOK_TIMEOUT_MILLIS);
             EventType type = event.getType();
             String realmName = realm.getName();
-            boolean queued = sender.submit(laneKey(event),
+            boolean queued = sender.submit(queueKey(event),
                     () -> deliver(http, url, signedPayload, signedAt + TOKEN_LIFETIME_SECONDS, type, realmName));
             if (!queued) {
                 log.warn("AMFA webhook dropped for event {} (realm {}): the send queue is full",
@@ -189,7 +189,7 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
     }
 
     /**
-     * Send one signed event. Runs on a sender lane, after the session may have
+     * Send one signed event. Runs on a sender thread, after the session may have
      * closed, so it touches nothing but its arguments. A webhook that waited past
      * its token's expiry is not sent: the engine would refuse it.
      */
@@ -215,14 +215,14 @@ public class AmfaWebhookEventListenerProvider implements EventListenerProvider {
     }
 
     /**
-     * The lane an event is sent on: the user it is about, so one user's events
-     * keep their order. A refused login that Keycloak emitted without a user
-     * goes by the user AMFA scored. An event with no user at all, such as a
-     * login with an unknown username, has no order to keep, so it goes by its
-     * own ID: a burst of them spreads over the lanes instead of queueing on the
-     * realm's one lane, where a full queue would drop them.
+     * The queue an event is sent from: the user it is about, so one user's
+     * events keep their order. A refused login that Keycloak emitted without a
+     * user goes by the user AMFA scored. An event with no user at all, such as
+     * a login with an unknown username, has no order to keep, so it goes by its
+     * own ID: a burst of them is sent in parallel instead of queueing as the
+     * realm's, where a full queue would drop them.
      */
-    private static String laneKey(Event event) {
+    private static String queueKey(Event event) {
         if (event.getUserId() != null) {
             return event.getUserId();
         }

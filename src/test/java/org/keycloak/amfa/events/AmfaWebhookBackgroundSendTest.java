@@ -177,7 +177,7 @@ class AmfaWebhookBackgroundSendTest {
     }
 
     @Test
-    void aRefusedLoginWithoutAUserGoesOnTheScoredUsersLane() {
+    void aRefusedLoginWithoutAUserGoesInTheScoredUsersQueue() {
         provider.onEvent(event(EventType.LOGIN_ERROR, null, Map.of(EventBuilderHelper.USER_ID_DETAIL, "user-2")));
 
         queuedFor("user-2");
