@@ -6,6 +6,8 @@ package org.keycloak.amfa.authenticator.mfa.totp;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthAuthenticator;
+import org.keycloak.amfa.util.EventBuilderHelper;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.credential.OTPCredentialProvider;
@@ -20,6 +22,7 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.credential.OTPCredentialModel;
 import org.keycloak.services.managers.BruteForceProtector;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -68,6 +71,9 @@ class MfaTOTPAuthenticatorTest {
         lenient().when(form.setError(anyString())).thenReturn(form);
         lenient().when(form.createLoginTotp()).thenReturn(page);
         lenient().when(event.user(any(UserModel.class))).thenReturn(event);
+        lenient().when(event.detail(anyString(), nullable(String.class))).thenReturn(event);
+        lenient().when(authSession.getAuthNote(AdaptiveAuthAuthenticator.AUTH_NOTE)).thenReturn("3");
+        lenient().when(authSession.getAuthNote(AdaptiveAuthAuthenticator.EVENT_ID_NOTE)).thenReturn("decision-1");
         lenient().when(user.credentialManager()).thenReturn(credentials);
         lenient().when(otpProvider.getDefaultCredential(session, realm, user)).thenReturn(otpCredential);
         lenient().when(otpProvider.getType()).thenReturn(OTPCredentialModel.TYPE);
@@ -179,5 +185,57 @@ class MfaTOTPAuthenticatorTest {
 
         verify(context).success();
         verifyNoInteractions(protector);
+    }
+
+    /** The event of a failed attempt carries the login's AMFA details. */
+    private void verifyAmfaDetails() {
+        verify(event).detail(AdaptiveAuthAuthenticator.RISK_LEVEL, "3");
+        verify(event).detail(EventBuilderHelper.AMFA_EVENT_ID_DETAIL, "decision-1");
+    }
+
+    @Test
+    void aWrongCodeIsRecordedWithTheAmfaDetailsBeforeItIsCounted() {
+        bruteForce(true, false, false);
+        submit("000000", false);
+
+        authenticator.action(context);
+
+        verifyAmfaDetails();
+        InOrder order = inOrder(event, context);
+        order.verify(event).user(user);
+        order.verify(event).error(Errors.INVALID_USER_CREDENTIALS);
+        order.verify(context).failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS, page);
+    }
+
+    @Test
+    void anEmptyCodeIsRecordedLikeAWrongOne() {
+        bruteForce(true, false, false);
+        submit("", false);
+
+        authenticator.action(context);
+
+        verifyAmfaDetails();
+        verify(event).error(Errors.INVALID_USER_CREDENTIALS);
+    }
+
+    @Test
+    void aLockoutRefusalCarriesTheAmfaDetails() {
+        bruteForce(true, true, false);
+        submit("123456", true);
+
+        authenticator.action(context);
+
+        verifyAmfaDetails();
+        verify(event).error(Errors.USER_TEMPORARILY_DISABLED);
+    }
+
+    @Test
+    void theRightCodeRecordsNoError() {
+        bruteForce(true, false, false);
+        submit("123456", true);
+
+        authenticator.action(context);
+
+        verify(event, never()).error(anyString());
     }
 }
