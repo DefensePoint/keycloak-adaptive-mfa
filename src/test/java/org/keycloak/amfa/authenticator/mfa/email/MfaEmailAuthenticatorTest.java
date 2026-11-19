@@ -451,4 +451,27 @@ class MfaEmailAuthenticatorTest {
 
         verify(event, never()).error(anyString());
     }
+
+    /*
+     * The code page comes after the password and before the second factor, so
+     * whoever has only the password sees it. It names the mailbox without
+     * giving the address away.
+     */
+
+    @Test
+    void theCodePageShowsTheAddressMasked() {
+        authenticator.authenticate(context);
+
+        verify(form).setAttribute("email", "use*@example.com");
+        verify(form, never()).setAttribute("email", "user@example.com");
+    }
+
+    @Test
+    void theCodePageAfterAWrongCodeShowsTheAddressMasked() {
+        authenticator.authenticate(context);
+        guess(wrong());
+
+        verify(form, times(2)).setAttribute("email", "use*@example.com");
+        verify(form, never()).setAttribute("email", "user@example.com");
+    }
 }

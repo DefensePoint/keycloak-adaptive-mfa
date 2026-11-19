@@ -6,6 +6,7 @@ package org.keycloak.amfa.authenticator.mfa.email;
 import org.jboss.logging.Logger;
 import org.keycloak.amfa.authenticator.mfa.MfaUtils;
 import org.keycloak.amfa.util.Constants;
+import org.keycloak.amfa.util.EmailUtils;
 import org.keycloak.amfa.util.EventBuilderHelper;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
@@ -253,7 +254,7 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         }
 
         LoginFormsProvider form = context.form()
-                .setAttribute("email", context.getUser().getEmail())
+                .setAttribute("email", EmailUtils.maskEmailAddress(context.getUser().getEmail()))
                 .setError("invalidOTPMessage");
         context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
                 form.createForm("login-mfa-email.ftl"));
@@ -320,7 +321,7 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
     /** The code page, with {@code error} as its message when not null. */
     private void challengeWithForm(AuthenticationFlowContext context, String error) {
         LoginFormsProvider form = context.form()
-                .setAttribute("email", context.getUser().getEmail());
+                .setAttribute("email", EmailUtils.maskEmailAddress(context.getUser().getEmail()));
         if (error != null) {
             form.setError(error);
         }
