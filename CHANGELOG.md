@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A wrong code on the AMFA email or TOTP step is recorded as a `LOGIN_ERROR`
+  event, as Keycloak's own OTP form records one: `invalid_user_otp` on the
+  email step and `invalid_user_credentials` on the TOTP step, where an empty
+  code counts the same way. Before, a wrong code counted towards brute-force
+  protection but left no event, so a monitoring tool saw no code guessing on
+  these steps. These events, and the email step's limit and the lockout
+  refusals of both steps, carry the login's AMFA details, such as `risk_level`
+  and `amfa_event_id`. The login webhook sends them to the engine like any
+  other `LOGIN_ERROR`; the LOGIN after the right code stays linked to its
+  decision. The engine counts them among the user's failed logins of the last
+  24 hours, as it already did for wrong codes on Keycloak's own OTP form: after
+  two, a login the engine finds very unfamiliar, or one after two high-risk
+  logins, is raised from Risk 3 to Risk 4
+
 - A login webhook for an event with no user at all, such as a login with an
   unknown username, goes out on a lane picked by the event's own ID instead of
   the realm's one lane. A burst of them, as in a password-guessing run, spreads

@@ -91,6 +91,10 @@ reaching the limit is recorded once per login, as a `LOGIN_ERROR` event with the
 `reached_resend_otp_limit`. To allow more, open the email step's settings (the gear on the
 execution) and set **Codes per login**.
 
+A wrong code is recorded as a `LOGIN_ERROR` event with the error `invalid_user_otp`
+(`invalid_user_credentials` on the TOTP step), carrying the login's AMFA details, and counts
+towards the realm's brute-force protection.
+
 The limit is per login: starting the login again, with the password, allows as many codes
 again. It slows a flood of emails to one user rather than capping it.
 

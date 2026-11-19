@@ -44,6 +44,9 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
     /** Event error when a login has used up its codes. */
     static final String CODE_LIMIT_REACHED = "reached_resend_otp_limit";
 
+    /** Event error for a wrong code. */
+    static final String WRONG_CODE = "invalid_user_otp";
+
     /**
      * How long an issued code stays valid, whether or not it is ever guessed
      * wrong. Keeps a code from a stale or abandoned attempt from still being
@@ -94,7 +97,7 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         // would let reloads of this page raise the user's risk for later logins.
         if (mfaUtils.getSentCount(authSession) >= codesPerLogin(context)) {
             if (mfaUtils.markLimitRecorded(authSession)) {
-                context.getEvent().user(context.getUser()).error(CODE_LIMIT_REACHED);
+                EventBuilderHelper.recordError(context.getEvent(), authSession, context.getUser(), CODE_LIMIT_REACHED);
             }
             context.challenge(context.form()
                     .setError("mfaCodeLimitReached")
@@ -233,6 +236,10 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         // needs an explicit call or it would silently go free, undermining
         // the "every wrong guess counts" guarantee the resend branch above
         // documents.
+        //
+        // Either way the guess is recorded as a LOGIN_ERROR, as Keycloak's own OTP
+        // form records one, so a monitoring tool sees code guessing on this step.
+        EventBuilderHelper.recordError(context.getEvent(), authSession, context.getUser(), WRONG_CODE);
         int attempts = mfaUtils.incrementAttempts(authSession);
 
         if (attempts >= MAX_ATTEMPTS_PER_CODE) {
@@ -295,7 +302,7 @@ public abstract class MfaEmailAuthenticator implements Authenticator {
         if (bruteForceError == null) {
             return false;
         }
-        context.getEvent().user(user).error(bruteForceError);
+        EventBuilderHelper.recordError(context.getEvent(), context.getAuthenticationSession(), user, bruteForceError);
         String message = "user_temporarily_disabled".equals(bruteForceError)
                 ? "accountTemporarilyDisabledMessage"
                 : "accountPermanentlyDisabledMessage";

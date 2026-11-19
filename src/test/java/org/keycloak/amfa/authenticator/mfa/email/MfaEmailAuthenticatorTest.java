@@ -6,12 +6,15 @@ package org.keycloak.amfa.authenticator.mfa.email;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.amfa.authenticator.adaptiveauth.AdaptiveAuthAuthenticator;
 import org.keycloak.amfa.authenticator.mfa.MfaUtils;
+import org.keycloak.amfa.util.EventBuilderHelper;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.common.util.Time;
 import org.keycloak.email.EmailException;
 import org.keycloak.email.EmailTemplateProvider;
+import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.http.HttpRequest;
@@ -22,6 +25,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.services.managers.BruteForceProtector;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -89,6 +93,9 @@ class MfaEmailAuthenticatorTest {
         lenient().when(context.getProtector()).thenReturn(protector);
         lenient().when(context.getExecution()).thenReturn(execution);
         lenient().when(event.user(any(UserModel.class))).thenReturn(event);
+        lenient().when(event.detail(anyString(), nullable(String.class))).thenReturn(event);
+        notes.put(AdaptiveAuthAuthenticator.AUTH_NOTE, "3");
+        notes.put(AdaptiveAuthAuthenticator.EVENT_ID_NOTE, "decision-1");
         lenient().when(user.getEmail()).thenReturn("user@example.com");
         lenient().when(form.setAttribute(anyString(), any())).thenReturn(form);
         lenient().when(form.setError(anyString())).thenReturn(form);
@@ -383,5 +390,65 @@ class MfaEmailAuthenticatorTest {
         } catch (EmailException e) {
             throw new AssertionError(e);
         }
+    }
+
+    /** The event of a failed attempt carries the login's AMFA details. */
+    private void verifyAmfaDetails(int times) {
+        verify(event, times(times)).detail(AdaptiveAuthAuthenticator.RISK_LEVEL, "3");
+        verify(event, times(times)).detail(EventBuilderHelper.AMFA_EVENT_ID_DETAIL, "decision-1");
+    }
+
+    @Test
+    void aWrongCodeIsRecordedWithTheAmfaDetailsBeforeItIsCounted() {
+        authenticator.authenticate(context);
+        guess(wrong());
+
+        verifyAmfaDetails(1);
+        InOrder order = inOrder(event, context);
+        order.verify(event).user(user);
+        order.verify(event).error(MfaEmailAuthenticator.WRONG_CODE);
+        order.verify(context).failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS, codePage);
+    }
+
+    @Test
+    void everyWrongGuessIsRecordedIncludingTheThirdThatSendsANewCode() {
+        authenticator.authenticate(context);
+        for (int i = 0; i < 3; i++) {
+            guess(wrong());
+        }
+
+        verify(event, times(3)).error(MfaEmailAuthenticator.WRONG_CODE);
+        verifyAmfaDetails(3);
+        InOrder order = inOrder(event, protector);
+        order.verify(event, times(3)).error(MfaEmailAuthenticator.WRONG_CODE);
+        order.verify(protector).failedLogin(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void theLimitEventCarriesTheAmfaDetails() {
+        reachTheLimitPage();
+
+        verify(event).error(MfaEmailAuthenticator.CODE_LIMIT_REACHED);
+        verifyAmfaDetails(1);
+    }
+
+    @Test
+    void aLockoutRefusalCarriesTheAmfaDetails() {
+        when(realm.isBruteForceProtected()).thenReturn(true);
+        when(protector.isTemporarilyDisabled(session, realm, user)).thenReturn(true);
+
+        authenticator.authenticate(context);
+
+        verify(event).error(Errors.USER_TEMPORARILY_DISABLED);
+        verifyAmfaDetails(1);
+        assertTrue(sentCodes.isEmpty());
+    }
+
+    @Test
+    void theRightCodeRecordsNoError() {
+        authenticator.authenticate(context);
+        guess(sentCodes.get(0));
+
+        verify(event, never()).error(anyString());
     }
 }
