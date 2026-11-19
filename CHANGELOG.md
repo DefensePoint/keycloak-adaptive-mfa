@@ -33,12 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two, a login the engine finds very unfamiliar, or one after two high-risk
   logins, is raised from Risk 3 to Risk 4
 
-- A login webhook for an event with no user at all, such as a login with an
-  unknown username, goes out on a lane picked by the event's own ID instead of
-  the realm's one lane. A burst of them, as in a password-guessing run, spreads
-  over the lanes instead of queueing behind one another and filling that lane,
-  after which further ones were dropped. Events with a user still keep that
-  user's order
+- Login webhooks wait in a queue per user instead of on 32 fixed lanes, each
+  shared by the users that fell on it. One user's webhooks still go out one at
+  a time, in the order Keycloak emitted them. Before, a user with many
+  webhooks waiting, as in a password-guessing run on one account while the
+  engine was slow, held up every other user on their lane, whose webhooks
+  could then wait past their 30 second token and be dropped. Now such a user
+  holds at most one of the 32 sending threads and takes turns with the
+  others. A user can have 250 webhooks waiting, and all users together 8000,
+  the same total as before. A webhook for an event with no user at all, such
+  as a login with an unknown username, goes by the event's own ID instead of
+  the realm's, so a burst of them is sent in parallel instead of queueing
+  behind one another, after which further ones were dropped
 
 ### Fixed
 
