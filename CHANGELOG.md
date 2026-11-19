@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-19
+
+Upgrading from 1.0.1:
+
+- Register the `AMFA details on login events` required action
+  (`amfa-login-event-details`) in each realm that uses AMFA: Authentication →
+  Required actions → Register. Keycloak does not register it by itself.
+  Without it, the LOGIN event of an SSO login, or of a login that ends with a
+  required action such as TOTP setup, has no AMFA details, `amfa_event_id`
+  included, and a login that ends with a required action reaches the engine
+  without its device details
+- Upgrade the admin UI to its 1.1.0 release at the same time; it reads the
+  AMFA switch the same way and sets up a realm without an engine endpoint
+- Keycloak 26.6 only, as before: the Email OTP step fails on other Keycloak
+  lines (see Compatibility in the README). The JAR still needs
+  `io.vavr:vavr` 1.0.1 next to it
+- Behaviour that changes for existing realms: the AMFA switch
+  (`adaptiveToggle`) now applies at login, and only an explicit `false`
+  switches AMFA off, so a realm set to `false` logs in as low risk without
+  asking the engine, and a realm without the attribute that has an engine
+  endpoint now gets the login webhook too; a wrong code on the email or TOTP
+  step is now a `LOGIN_ERROR` event that the engine counts among the user's
+  failed logins; the email step sends at most three codes per login, which
+  its "Codes per login" setting changes
+
 ### Added
 
 - The events of a login AMFA scored carry an `amfa_event_id` detail: the ID of
@@ -16,6 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of twice. An SSO login's LOGIN event carries it when the
   `amfa-login-event-details` required action is registered, as for the other
   AMFA details
+
+- A required action, `AMFA details on login events`
+  (`amfa-login-event-details`), adds the login's AMFA details, such as
+  `risk_level`, `user_agent`, `screen_resolution` and `amfa_event_id`, to a
+  LOGIN event that Keycloak sends as a new event: the LOGIN of a login that
+  ends with a required action, such as TOTP setup or a password change, and
+  the LOGIN of an SSO login. Before, those LOGIN events had no AMFA details,
+  and for a login that ended with a required action the login webhook sent
+  the engine an empty user agent, screen resolution and language. The action
+  only acts on a login AMFA scored, never shows the user a page, cannot be
+  requested by a client and logs an error instead of failing the login.
+  Keycloak does not register it by itself; see "Upgrading from 1.0.1"
 
 ### Changed
 
@@ -33,18 +70,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two, a login the engine finds very unfamiliar, or one after two high-risk
   logins, is raised from Risk 3 to Risk 4
 
-- Login webhooks wait in a queue per user instead of on 32 fixed lanes, each
-  shared by the users that fell on it. One user's webhooks still go out one at
-  a time, in the order Keycloak emitted them. Before, a user with many
-  webhooks waiting, as in a password-guessing run on one account while the
-  engine was slow, held up every other user on their lane, whose webhooks
-  could then wait past their 30 second token and be dropped. Now such a user
-  holds at most one of the 32 sending threads and takes turns with the
-  others. A user can have 250 webhooks waiting, and all users together 8000,
-  the same total as before. A webhook for an event with no user at all, such
-  as a login with an unknown username, goes by the event's own ID instead of
-  the realm's, so a burst of them is sent in parallel instead of queueing
-  behind one another, after which further ones were dropped
+- The login webhook is sent in the background instead of on the login
+  thread. Before, each login waited for the engine to answer its webhook, up
+  to the 5 second timeout when the engine was slow or unreachable, on top of
+  the risk request. The webhook is still signed during the login, then waits
+  in a queue per user and goes out on one of 32 sending threads. One user's
+  webhooks go out one at a time, in the order Keycloak emitted them, and a
+  user with many waiting, as in a password-guessing run on one account,
+  holds at most one thread and takes turns with the others. A user can have
+  250 webhooks waiting and all users together 8000. A webhook that finds its
+  queue full, or that waited past its 30 second token, is dropped with a
+  warning in the log instead of holding up a login. A webhook for an event
+  with no user at all, such as a login with an unknown username, has a queue
+  of its own, so a burst of them is sent in parallel. When Keycloak shuts
+  down, the waiting webhooks get 5 seconds to go out
+
+- The login webhook reports a LOGIN that followed the AMFA risk step under
+  the ID of the engine's decision for that login, the ID the risk request
+  already carried, instead of under Keycloak's event ID. An engine that links
+  a login's outcome to its decision by ID can then do so however long the
+  user took between the risk step and the end of the login, for example to
+  enter a TOTP code. Every other event keeps Keycloak's event ID, including a
+  `LOGIN_ERROR` earlier in the same login, and so does a LOGIN without the
+  AMFA step, such as a silent re-login on an existing session
 
 ### Fixed
 
@@ -149,6 +197,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the step-up runs, and the comparison or level that cannot be used is
   logged once
 
+- An SSO login, through an identity provider whose post login flow runs the
+  AMFA steps, reaches the engine with its context. Keycloak sends the LOGIN
+  event of such a login without the details the AMFA steps added, so the
+  login webhook sent the engine an empty user agent, language, screen
+  resolution and auth context hash, and the engine kept SSO users' history
+  without them. The AMFA steps now also keep these four values on the user
+  session, and the webhook uses them for an SSO LOGIN that lacks them. A
+  silent re-login on an existing session, and account changes inside it,
+  still send them empty, so a stolen session cookie cannot report the
+  victim's device as its own
+
+- A login that the flow refuses after the AMFA risk step, such as at a deny
+  step for a high risk level, is reported to the engine as a failed login of
+  its user. Keycloak emits such a refusal without a user ID, as a
+  `LOGIN_ERROR`, or through an identity provider as an
+  `IDENTITY_PROVIDER_POST_LOGIN_ERROR`, which the webhook did not forward at
+  all, so the engine could not tell whose login was refused. The events of a
+  login AMFA scored now carry an `amfa_user_id` detail, the ID of the user
+  AMFA scored, and the webhook uses it for a failed login without a user ID
+  when it names a user of the realm. An `IDENTITY_PROVIDER_POST_LOGIN_ERROR`
+  is sent to the engine as a `LOGIN_ERROR`, and only once, although Keycloak
+  emits it twice
+
+- A login request without a `User-Agent` header no longer fails. The risk
+  step threw an error on it, so the login ended on an error page, and the
+  auth context step logged the engine as unreachable and sent no context.
+  Both now send the engine an empty user agent, and the login goes on
+
+- The Adaptive MFA admin REST endpoints (`amfa-api`) answer with
+  `Cache-Control: no-cache`, as Keycloak's own admin endpoints do, errors
+  included. They sent no caching headers, so a browser or proxy could keep
+  and reuse an answer that holds realm settings or admin data
+
+- The service account token request, made before each call to the engine at
+  login and on the admin page, waits at most 5 seconds to connect, to get a
+  pooled connection and to read the answer, as the engine calls at login do.
+  It used Keycloak's default HTTP client, which sets no connect timeout, so
+  when the address the token endpoint is reached at dropped packets, every
+  login waited on the operating system's connect timeout, a minute or more,
+  before applying the failure mode. A failed token request still ends in the
+  realm's fallback risk level, or a denial in `mandatory` mode, as before
+
+- The Adaptive MFA admin page's settings and scoring calls wait at most 10
+  seconds on the engine to connect, to get a pooled connection and to read
+  the answer. They used Keycloak's default HTTP client, with no connect
+  timeout and a 5 second read timeout, so an engine address that dropped
+  packets held the page for over a minute, while a save the engine took more
+  than 5 seconds to answer was reported as failed. A timeout now ends in the
+  same "AMFA engine unreachable" error as a refused connection
+
 ## [1.0.1] - 2026-09-22
 
 ### Added
@@ -164,4 +262,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests with JUnit 5 and Mockito
 - SECURITY.md, CODE_OF_CONDUCT.md, and CONTRIBUTING.md
 
+[1.1.0]: https://github.com/DefensePoint/keycloak-adaptive-mfa/releases/tag/v1.1.0
 [1.0.1]: https://github.com/DefensePoint/keycloak-adaptive-mfa/releases/tag/v1.0.1
