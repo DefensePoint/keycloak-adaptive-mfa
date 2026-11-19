@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.keycloak.amfa.util.AmfaHttp;
 import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.utils.StringUtil;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -42,7 +43,23 @@ public class AdaptiveAuthService {
     }
 
     public AdaptiveAuthResponse getAdaptiveAuthDecision(String token, String url, String userId, String clientId, String ipAddress, String userAgent, String locales, String screenResolution, String realmName, String groupId, String eventId, String authContextHash) throws IOException {
-        log.debug("getAdaptiveAuthDecision: userId={}, clientId={}, ipAddress={}, userAgent={}, realmId={} ,group_id={},event_id={},authContextHash={}, url={}", userId, clientId, ipAddress, userAgent, realmName, groupId, eventId, authContextHash, url);
+        // Sanitized like AdaptiveAuthAuthenticator's line: the User-Agent and IP
+        // address come from the request, the client id can be chosen by a caller
+        // (dynamic client registration), the hash comes from the engine and the
+        // URL from the realm's settings, so a CR or LF in any of them would start
+        // a forged log line. eventId is the one value left raw: the authenticator
+        // generates it with UUID.randomUUID().
+        log.debug("getAdaptiveAuthDecision: userId={}, clientId={}, ipAddress={}, userAgent={}, realmId={}, "
+                        + "group_id={}, event_id={}, authContextHash={}, url={}",
+                StringUtil.sanitizeSpacesAndQuotes(userId, null),
+                StringUtil.sanitizeSpacesAndQuotes(clientId, null),
+                StringUtil.sanitizeSpacesAndQuotes(ipAddress, null),
+                StringUtil.sanitizeSpacesAndQuotes(userAgent, null),
+                StringUtil.sanitizeSpacesAndQuotes(realmName, null),
+                StringUtil.sanitizeSpacesAndQuotes(groupId, null),
+                eventId,
+                StringUtil.sanitizeSpacesAndQuotes(authContextHash, null),
+                StringUtil.sanitizeSpacesAndQuotes(url, null));
         Map<String, String> bodyParams = new HashMap<>();
         bodyParams.put("user_id", userId);
         bodyParams.put("client", clientId);

@@ -19,14 +19,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- A login webhook for an event with no user at all, such as a login with an
-  unknown username, goes out on a lane picked by the event's own ID instead of
-  the realm's one lane. A burst of them, as in a password-guessing run, spreads
-  over the lanes instead of queueing behind one another and filling that lane,
-  after which further ones were dropped. Events with a user still keep that
-  user's order
+- A wrong code on the AMFA email or TOTP step is recorded as a `LOGIN_ERROR`
+  event, as Keycloak's own OTP form records one: `invalid_user_otp` on the
+  email step and `invalid_user_credentials` on the TOTP step, where an empty
+  code counts the same way. Before, a wrong code counted towards brute-force
+  protection but left no event, so a monitoring tool saw no code guessing on
+  these steps. These events, and the email step's limit and the lockout
+  refusals of both steps, carry the login's AMFA details, such as `risk_level`
+  and `amfa_event_id`. The login webhook sends them to the engine like any
+  other `LOGIN_ERROR`; the LOGIN after the right code stays linked to its
+  decision. The engine counts them among the user's failed logins of the last
+  24 hours, as it already did for wrong codes on Keycloak's own OTP form: after
+  two, a login the engine finds very unfamiliar, or one after two high-risk
+  logins, is raised from Risk 3 to Risk 4
+
+- Login webhooks wait in a queue per user instead of on 32 fixed lanes, each
+  shared by the users that fell on it. One user's webhooks still go out one at
+  a time, in the order Keycloak emitted them. Before, a user with many
+  webhooks waiting, as in a password-guessing run on one account while the
+  engine was slow, held up every other user on their lane, whose webhooks
+  could then wait past their 30 second token and be dropped. Now such a user
+  holds at most one of the 32 sending threads and takes turns with the
+  others. A user can have 250 webhooks waiting, and all users together 8000,
+  the same total as before. A webhook for an event with no user at all, such
+  as a login with an unknown username, goes by the event's own ID instead of
+  the realm's, so a burst of them is sent in parallel instead of queueing
+  behind one another, after which further ones were dropped
 
 ### Fixed
+
+- A realm whose `fallbackRisk` is missing, not a number or outside 1-4 gets
+  one warning in the log for that value, not one on every login. Another
+  unusable value, or the same one after it was fixed in between, is warned
+  about again. The login still uses Risk 3 as the fallback, as before
+
+- The email code page shows the address masked, as `jon*****@example.com`,
+  not in full. The page comes after the password and before the second
+  factor, so someone with only the password learned the account's address
+  from it. The domain stays, so the user still knows which mailbox to check
+
+- The debug line logged before each call to the risk engine no longer lets a
+  value split it. It logged the User-Agent, IP address, client, realm, group,
+  the engine's own auth-context hash and the engine URL as they were, so a
+  carriage return or line feed in any of them started a new, forged log line.
+  They are now sanitized the same way as the authenticator's own debug line
+
+- The TOTP step checks the code against the authenticator device the user
+  picked on the code page, as Keycloak's own OTP form does. It always used the
+  default device, so a user with two devices could only log in with the
+  default one's code. Without a choice it is still the default device. The
+  choice is kept selected after a wrong code and recorded on the event as
+  `selected_credential_id`. A picked ID that is not one of the user's devices
+  is refused like a wrong code
 
 - The email code step no longer gives a lockout away. Once brute-force
   protection locked the account out, the code page said "Invalid username or
