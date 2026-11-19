@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The TOTP step checks the code against the authenticator device the user
+  picked on the code page, as Keycloak's own OTP form does. It always used the
+  default device, so a user with two devices could only log in with the
+  default one's code. Without a choice it is still the default device. The
+  choice is kept selected after a wrong code and recorded on the event as
+  `selected_credential_id`. A picked ID that is not one of the user's devices
+  is refused like a wrong code
+
 - The Adaptive MFA admin page's settings and scoring calls say what is wrong.
   A realm without an engine endpoint, or without the `adaptive-auth-api` client
   or its secret, gets a 409 saying Adaptive MFA is not set up for the realm and
