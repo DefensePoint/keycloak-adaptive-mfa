@@ -12,6 +12,9 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 @Slf4j
 public class AdaptiveAuthUtils {
@@ -46,6 +49,16 @@ public class AdaptiveAuthUtils {
     public static final int MAX_RISK_LEVEL = 4;
 
     /**
+     * Per realm, the unusable {@code fallbackRisk} value last warned about. The
+     * value is read on every login, so without this a misconfigured realm logged
+     * the same warning on every login. A realm is warned about again when its
+     * value changes to another unusable one, or is fixed and later broken again.
+     * Bounded by the number of realms.
+     */
+    private static final ConcurrentMap<String, String> WARNED_FALLBACK_RISK = new ConcurrentHashMap<>();
+    private static final String UNSET = "\0unset";
+
+    /**
      * The risk level to apply when the engine cannot be consulted.
      *
      * <p>Read from the realm's {@code fallbackRisk} attribute. Every failure to read a
@@ -70,10 +83,12 @@ public class AdaptiveAuthUtils {
                 : realm.getAttribute(ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL);
 
         if (configured == null || configured.trim().isEmpty()) {
-            log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL
-                    + "' is not set" + realmSuffix(realm) + "; using Risk "
-                    + HIGH_RISK_LEVEL + " when the engine cannot be reached. Set it to a "
-                    + "value between " + MIN_RISK_LEVEL + " and " + MAX_RISK_LEVEL + ".");
+            if (firstWarningFor(realm, configured == null ? UNSET : configured)) {
+                log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL
+                        + "' is not set" + realmSuffix(realm) + "; using Risk "
+                        + HIGH_RISK_LEVEL + " when the engine cannot be reached. Set it to a "
+                        + "value between " + MIN_RISK_LEVEL + " and " + MAX_RISK_LEVEL + ".");
+            }
             return HIGH_RISK_LEVEL;
         }
 
@@ -81,21 +96,35 @@ public class AdaptiveAuthUtils {
         try {
             level = Integer.parseInt(configured.trim());
         } catch (NumberFormatException e) {
-            log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL + "' is '"
-                    + configured + "'" + realmSuffix(realm) + ", which is not a number; "
-                    + "using Risk " + HIGH_RISK_LEVEL + ".");
+            if (firstWarningFor(realm, configured)) {
+                log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL + "' is '"
+                        + configured + "'" + realmSuffix(realm) + ", which is not a number; "
+                        + "using Risk " + HIGH_RISK_LEVEL + ".");
+            }
             return HIGH_RISK_LEVEL;
         }
 
         if (level < MIN_RISK_LEVEL || level > MAX_RISK_LEVEL) {
-            log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL + "' is "
-                    + level + realmSuffix(realm) + ", outside the valid range "
-                    + MIN_RISK_LEVEL + "-" + MAX_RISK_LEVEL + "; using Risk "
-                    + HIGH_RISK_LEVEL + ".");
+            if (firstWarningFor(realm, configured)) {
+                log.warn("Realm attribute '" + ADAPTIVE_AUTH_API_FALLBACK_RISK_LEVEL + "' is "
+                        + level + realmSuffix(realm) + ", outside the valid range "
+                        + MIN_RISK_LEVEL + "-" + MAX_RISK_LEVEL + "; using Risk "
+                        + HIGH_RISK_LEVEL + ".");
+            }
             return HIGH_RISK_LEVEL;
         }
 
+        WARNED_FALLBACK_RISK.remove(realmKey(realm));
         return level;
+    }
+
+    /** Whether this unusable value is new for the realm, recording it if so. */
+    private static boolean firstWarningFor(RealmModel realm, String value) {
+        return !Objects.equals(WARNED_FALLBACK_RISK.put(realmKey(realm), value), value);
+    }
+
+    private static String realmKey(RealmModel realm) {
+        return realm == null ? "" : String.valueOf(realm.getId());
     }
 
     /**

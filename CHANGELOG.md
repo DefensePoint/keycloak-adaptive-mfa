@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A realm whose `fallbackRisk` is missing, not a number or outside 1-4 gets
+  one warning in the log for that value, not one on every login. Another
+  unusable value, or the same one after it was fixed in between, is warned
+  about again. The login still uses Risk 3 as the fallback, as before
+
 - The email code page shows the address masked, as `jon*****@example.com`,
   not in full. The page comes after the password and before the second
   factor, so someone with only the password learned the account's address
