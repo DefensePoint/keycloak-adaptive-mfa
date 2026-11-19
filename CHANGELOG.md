@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The debug line logged before each call to the risk engine no longer lets a
+  value split it. It logged the User-Agent, IP address, client, realm, group,
+  the engine's own auth-context hash and the engine URL as they were, so a
+  carriage return or line feed in any of them started a new, forged log line.
+  They are now sanitized the same way as the authenticator's own debug line
+
 - The Adaptive MFA admin page's settings and scoring calls say what is wrong.
   A realm without an engine endpoint, or without the `adaptive-auth-api` client
   or its secret, gets a 409 saying Adaptive MFA is not set up for the realm and
