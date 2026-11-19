@@ -39,4 +39,34 @@ class EmailUtilsTest {
     void isValidEmailAddress_returnsFalseForInvalid() {
         assertFalse(EmailUtils.isValidEmailAddress("not-an-email"));
     }
+
+    // --- maskEmailAddress: the address as the code page shows it ---
+
+    @Test
+    void maskEmailAddress_keepsTheFirstThreeCharactersAndTheDomain() {
+        assertEquals("jon*****@example.com", EmailUtils.maskEmailAddress("jonathan@example.com"));
+    }
+
+    @Test
+    void maskEmailAddress_masksAShortNameBeyondItsFirstCharacter() {
+        assertEquals("b**@example.com", EmailUtils.maskEmailAddress("bob@example.com"));
+        assertEquals("a*@example.com", EmailUtils.maskEmailAddress("al@example.com"));
+        assertEquals("*@example.com", EmailUtils.maskEmailAddress("a@example.com"));
+    }
+
+    @Test
+    void maskEmailAddress_masksUpToTheLastAt() {
+        assertEquals("\"jo*******@example.com", EmailUtils.maskEmailAddress("\"john@doe\"@example.com"));
+    }
+
+    @Test
+    void maskEmailAddress_masksAnAddressWithoutADomain() {
+        assertEquals("loc**", EmailUtils.maskEmailAddress("local"));
+    }
+
+    @Test
+    void maskEmailAddress_returnsEmptyForNoAddress() {
+        assertEquals("", EmailUtils.maskEmailAddress(null));
+        assertEquals("", EmailUtils.maskEmailAddress(""));
+    }
 }

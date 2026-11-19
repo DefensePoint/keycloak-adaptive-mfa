@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The email code page shows the address masked, as `jon*****@example.com`,
+  not in full. The page comes after the password and before the second
+  factor, so someone with only the password learned the account's address
+  from it. The domain stays, so the user still knows which mailbox to check
+
 - The debug line logged before each call to the risk engine no longer lets a
   value split it. It logged the User-Agent, IP address, client, realm, group,
   the engine's own auth-context hash and the engine URL as they were, so a
