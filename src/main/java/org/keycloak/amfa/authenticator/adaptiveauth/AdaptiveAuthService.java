@@ -81,6 +81,9 @@ public class AdaptiveAuthService {
 
         // Not logged here: the caller logs the failure once, marked, with this
         // exception, so the status and the engine's answer go in its message.
+        if (httpResponse.getStatus() == 429) {
+            throw new EngineRateLimitedException("HTTP 429: " + httpResponse.asString());
+        }
         if (httpResponse.getStatus() >= 300) {
             throw new IOException("HTTP " + httpResponse.getStatus() + ": " + httpResponse.asString());
         }

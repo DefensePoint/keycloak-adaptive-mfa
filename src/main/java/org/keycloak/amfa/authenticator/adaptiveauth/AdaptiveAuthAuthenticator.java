@@ -31,7 +31,7 @@ public class AdaptiveAuthAuthenticator implements Authenticator {
     public static final String SCREEN_RESOLUTION = "screen_resolution";
     public static final String LOCAL = "local";
     public static String AUTH_NOTE = "adaptive-auth-risk-level";
-    /** "engine", "fallback" or "amfa_off" -- see EventBuilderHelper.DECISION_SOURCE_DETAIL. */
+    /** "engine", "fallback", "rate_limited" or "amfa_off" -- see EventBuilderHelper.DECISION_SOURCE_DETAIL. */
     public static String DECISION_SOURCE_NOTE = "adaptive-auth-decision-source";
     /** The decision source when the realm's AMFA switch is off. */
     public static final String DECISION_SOURCE_AMFA_OFF = "amfa_off";
@@ -143,8 +143,7 @@ public class AdaptiveAuthAuthenticator implements Authenticator {
         context.getAuthenticationSession().setAuthNote(SCREEN_RESOLUTION, screenResolution);
         context.getAuthenticationSession().setAuthNote(LOCAL, locales);
         context.getAuthenticationSession().setAuthNote(AUTH_NOTE, String.valueOf(riskLevel));
-        context.getAuthenticationSession().setAuthNote(DECISION_SOURCE_NOTE,
-                decision.isFromFallback() ? "fallback" : "engine");
+        context.getAuthenticationSession().setAuthNote(DECISION_SOURCE_NOTE, decision.getSource());
 
         EventBuilderHelper.addExtraDetailsToEvent(context.getEvent(),context.getAuthenticationSession());
 

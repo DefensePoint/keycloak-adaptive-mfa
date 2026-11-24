@@ -234,6 +234,22 @@ class AdaptiveAuthAuthenticatorTest {
     }
 
     @Test
+    void authenticate_aRateLimitedDecision_isReportedAsRateLimited() {
+        AuthenticationFlowContext ctx = loginContext("true", "http://engine.test", "advisory");
+        when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(AdaptiveAuthDecision.rateLimited(AdaptiveAuthUtils.HIGH_RISK_LEVEL));
+
+        new AdaptiveAuthAuthenticator(adaptiveAuthUtils, session).authenticate(ctx);
+
+        verify(ctx.getAuthenticationSession()).setAuthNote(AdaptiveAuthAuthenticator.DECISION_SOURCE_NOTE,
+                AdaptiveAuthDecision.SOURCE_RATE_LIMITED);
+        verify(ctx.getAuthenticationSession()).setAuthNote(AdaptiveAuthAuthenticator.AUTH_NOTE,
+                String.valueOf(AdaptiveAuthUtils.HIGH_RISK_LEVEL));
+        verify(ctx).success();
+    }
+
+    @Test
     void authenticate_noAmfaAttributesAtAll_stepsUpAtTheFallbackLevel() {
         AuthenticationFlowContext ctx = loginContext(null, null, null);
         when(adaptiveAuthUtils.getUserAdaptiveAuthDecision(any(), any(), anyInt(), any(), any(), any(),

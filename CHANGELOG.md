@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A login the engine rate-limits steps up instead of taking the realm's
+  fallback level. The engine answers a user's `/decision` requests over its
+  rate limit with 429, and the plugin handled that like an outage: the login
+  got the realm's fallback risk level, so with a fallback of 1 anyone with the
+  user's password could pass MFA by logging in until the engine rate-limited
+  that user. A 429 now gives the higher of 3 and the fallback level, in
+  advisory and mandatory failure mode alike (refusing would let anyone who can
+  spend a user's budget lock them out), with the login event's
+  `decision_source` set to `rate_limited` and a warning in the log without
+  `ADAPTIVE_AUTH_ENGINE_UNREACHABLE`, since the engine is up. Other error
+  answers, timeouts and refused connections are handled as before.
 - An error answer from the engine to a decision request is logged once. The
   engine call logged an unmarked error of its own, showing only the response
   object, before the error starting with `ADAPTIVE_AUTH_ENGINE_UNREACHABLE`,
