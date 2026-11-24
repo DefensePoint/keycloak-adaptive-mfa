@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An error answer from the engine to a decision request is logged once. The
+  engine call logged an unmarked error of its own, showing only the response
+  object, before the error starting with `ADAPTIVE_AUTH_ENGINE_UNREACHABLE`,
+  so each such failure gave two error lines and only one matched an alert on
+  the marker. The marked line now carries the HTTP status and the engine's
+  answer.
+
 ## [1.1.0] - 2026-11-19
 
 Upgrading from 1.0.1:

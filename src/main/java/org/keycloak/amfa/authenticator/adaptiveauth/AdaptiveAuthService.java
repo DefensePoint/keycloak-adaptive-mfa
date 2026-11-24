@@ -79,9 +79,10 @@ public class AdaptiveAuthService {
                 .json(bodyParams)
                 .asResponse();
 
+        // Not logged here: the caller logs the failure once, marked, with this
+        // exception, so the status and the engine's answer go in its message.
         if (httpResponse.getStatus() >= 300) {
-            log.error("getAdaptiveAuthDecision: httpResponse={}", httpResponse);
-            throw new IOException(httpResponse.asString());
+            throw new IOException("HTTP " + httpResponse.getStatus() + ": " + httpResponse.asString());
         }
 
         return httpResponse.asJson(AdaptiveAuthResponse.class);
