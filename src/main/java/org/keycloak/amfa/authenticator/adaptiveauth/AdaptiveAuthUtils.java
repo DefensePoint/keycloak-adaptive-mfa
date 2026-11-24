@@ -265,6 +265,16 @@ public class AdaptiveAuthUtils {
             AdaptiveAuthResponse adaptiveAuthResponse = adaptiveAuthService.getAdaptiveAuthDecision(token, url + "/decision", userId, clientId, ipAddress, userAgent, locales, screenResolution, realmName, groupId, eventId,authContexthash);
             log.debug("{}", adaptiveAuthResponse);
             return new AdaptiveAuthDecision(adaptiveAuthResponse.getRiskLevel(), false);
+        } catch (EngineRateLimitedException e) {
+            // Not an outage: the engine is up and refused this user's request.
+            // The fallback level would make the login easier to pass -- at 1,
+            // a login after enough quick ones would get past MFA -- and
+            // refusing would let anyone who can spend a user's budget lock
+            // them out. So it steps up, in either failure mode.
+            int riskLevel = Math.max(defaultRiskLevel, HIGH_RISK_LEVEL);
+            log.warn("AMFA rate-limited the decision for a login in realm {}; it steps up at risk level {}: {}",
+                    realm.getName(), riskLevel, e.getMessage());
+            return AdaptiveAuthDecision.rateLimited(riskLevel);
         } catch (Exception e) {
             return handleEngineFailure(realm, defaultRiskLevel, "Failed to get a decision", e);
         }
