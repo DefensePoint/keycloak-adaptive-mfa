@@ -4,6 +4,7 @@
 package org.keycloak.amfa.authenticator.adaptiveauth;
 
 import org.keycloak.amfa.authenticator.adaptiveauth.model.AdaptiveAuthResponse;
+import org.keycloak.amfa.service.serviceaccount.ServiceAccountService;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.amfa.util.AmfaHttp;
 import org.keycloak.http.simple.SimpleHttpResponse;
@@ -83,6 +84,10 @@ public class AdaptiveAuthService {
         // exception, so the status and the engine's answer go in its message.
         if (httpResponse.getStatus() == 429) {
             throw new EngineRateLimitedException("HTTP 429: " + httpResponse.asString());
+        }
+        if (ServiceAccountService.rejectsToken(httpResponse.getStatus())) {
+            // The token is reused across logins; one the engine rejects must not be.
+            ServiceAccountService.forgetToken(token);
         }
         if (httpResponse.getStatus() >= 300) {
             throw new IOException("HTTP " + httpResponse.getStatus() + ": " + httpResponse.asString());
