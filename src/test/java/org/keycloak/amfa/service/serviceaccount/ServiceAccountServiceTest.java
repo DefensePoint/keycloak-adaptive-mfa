@@ -160,4 +160,68 @@ class ServiceAccountServiceTest {
         assertEquals("the token endpoint returned HTTP 401: {\"error\":\"unauthorized_client\"}", e.getMessage());
         assertNull(ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
     }
+
+    /** A token endpoint that answers t1, t2, ... with the given lifetime, counting requests. */
+    private int[] tokenEndpointAnswering(long expiresIn) throws Exception {
+        int[] requests = {0};
+        CloseableHttpClient client = mock(CloseableHttpClient.class);
+        when(client.execute(any(HttpUriRequest.class))).thenAnswer(invocation -> {
+            requests[0]++;
+            Token token = new Token();
+            token.setEntity(new StringEntity("{\"access_token\":\"t" + requests[0] + "\",\"expires_in\":" + expiresIn + "}"));
+            return token;
+        });
+        when(provider.getHttpClient()).thenReturn(client);
+        return requests;
+    }
+
+    @Test
+    void aLoginReusesTheTokenTheLastOneGot() throws Exception {
+        int[] requests = tokenEndpointAnswering(300);
+        keycloakAt("http://reuse.test");
+
+        assertEquals("t1", ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals("t1", ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals("t1", ServiceAccountService.requestServiceAccountToken(realm, session, "adaptive-auth-api"));
+
+        assertEquals(1, requests[0]);
+    }
+
+    @Test
+    void aRotatedClientSecretGetsANewToken() throws Exception {
+        int[] requests = tokenEndpointAnswering(300);
+        keycloakAt("http://rotate.test");
+        ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api");
+
+        ClientModel rotated = mock(ClientModel.class);
+        when(rotated.getSecret()).thenReturn("rotated-secret");
+        when(realm.getClientByClientId("adaptive-auth-api")).thenReturn(rotated);
+
+        assertEquals("t2", ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals(2, requests[0]);
+    }
+
+    @Test
+    void aTokenTheEngineRejectedIsNotReused() throws Exception {
+        int[] requests = tokenEndpointAnswering(300);
+        keycloakAt("http://rejected.test");
+        String token = ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api");
+
+        ServiceAccountService.forgetToken(token);
+
+        assertEquals("t2", ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals(2, requests[0]);
+    }
+
+    @Test
+    void aRemovedClientIsReportedEvenWithATokenCached() throws Exception {
+        tokenEndpointAnswering(300);
+        keycloakAt("http://removed.test");
+        ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api");
+
+        when(realm.getClientByClientId("adaptive-auth-api")).thenReturn(null);
+
+        assertThrows(ServiceAccountNotConfiguredException.class,
+                () -> ServiceAccountService.requestServiceAccountToken(realm, session, "adaptive-auth-api"));
+    }
 }

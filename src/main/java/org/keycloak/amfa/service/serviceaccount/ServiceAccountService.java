@@ -32,6 +32,9 @@ public class ServiceAccountService {
      */
     public static final int TOKEN_TIMEOUT_MILLIS = 5000;
 
+    /** Tokens reused across logins on this node until shortly before they expire. */
+    private static final ServiceAccountTokenCache TOKENS = new ServiceAccountTokenCache(System::nanoTime);
+
     /**
      * Obtains a service account access token for the given client via client_credentials grant.
      * The client must have service accounts enabled in Keycloak.
@@ -79,6 +82,31 @@ public class ServiceAccountService {
         String tokenEndpoint = baseUri + "realms/" + realm.getName()
                 + "/protocol/openid-connect/token";
 
+        ServiceAccountTokenCache.Key key =
+                new ServiceAccountTokenCache.Key(realm.getId(), clientId, tokenEndpoint, clientSecret);
+        return TOKENS.get(key, () -> fetchToken(session, tokenEndpoint, clientId, clientSecret));
+    }
+
+    /**
+     * Forgets a token the engine rejected, so the next call asks Keycloak for a
+     * fresh one instead of reusing it until it expires.
+     */
+    public static void forgetToken(String token) {
+        TOKENS.forget(token);
+    }
+
+    /**
+     * Whether an engine answer may mean it refused the token. The engine answers
+     * 403 for a token it cannot verify (a signing key it no longer finds after a
+     * key rotation, an untrusted issuer) and 401 for a missing one. Dropping a
+     * token on a 403 that was about something else costs one token request.
+     */
+    public static boolean rejectsToken(int status) {
+        return status == 401 || status == 403;
+    }
+
+    private static ServiceAccountTokenCache.Fetched fetchToken(KeycloakSession session, String tokenEndpoint,
+            String clientId, String clientSecret) throws IOException {
         SimpleHttpResponse response = AmfaHttp.create(session, TOKEN_TIMEOUT_MILLIS)
                 .doPost(tokenEndpoint)
                 .param("grant_type", "client_credentials")
@@ -94,10 +122,14 @@ public class ServiceAccountService {
                     + ": " + response.asString());
         }
 
-        JsonNode tokenNode = response.asJson().get("access_token");
+        JsonNode body = response.asJson();
+        JsonNode tokenNode = body.get("access_token");
         if (tokenNode == null) {
             throw new IOException("the token response has no access_token");
         }
-        return tokenNode.asText();
+        // 0 when Keycloak does not say: such a token is used once, not kept.
+        JsonNode expiresIn = body.get("expires_in");
+        return new ServiceAccountTokenCache.Fetched(tokenNode.asText(),
+                expiresIn != null && expiresIn.canConvertToLong() ? expiresIn.asLong() : 0);
     }
 }

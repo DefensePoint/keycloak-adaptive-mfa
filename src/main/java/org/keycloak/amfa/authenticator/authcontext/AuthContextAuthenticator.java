@@ -92,6 +92,10 @@ public class AuthContextAuthenticator implements Authenticator {
                 // reason as the AuthContextModel log line above.
                 log.info("Auth context hash from AMFA: {}", StringUtil.sanitizeSpacesAndQuotes(hash, null));
             } else {
+                if (httpResponse != null && ServiceAccountService.rejectsToken(httpResponse.getStatus())) {
+                    // The token is reused across logins; one the engine rejects must not be.
+                    ServiceAccountService.forgetToken(token);
+                }
                 log.warn("Failed to get valid response from AMFA: HTTP status {}", httpResponse != null ? httpResponse.getStatus() : "null");
             }
             context.success();

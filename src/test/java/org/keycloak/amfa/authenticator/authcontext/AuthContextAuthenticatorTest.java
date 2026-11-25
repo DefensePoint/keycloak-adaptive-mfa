@@ -59,6 +59,7 @@ class AuthContextAuthenticatorTest {
         serviceAccounts = mockStatic(ServiceAccountService.class);
         serviceAccounts.when(() -> ServiceAccountService.getServiceAccountToken(any(), any(), anyString()))
                 .thenReturn("token");
+        serviceAccounts.when(() -> ServiceAccountService.rejectsToken(anyInt())).thenCallRealMethod();
         request = mock(SimpleHttpRequest.class, Answers.RETURNS_SELF);
         response = mock(SimpleHttpResponse.class);
         when(request.asResponse()).thenReturn(response);
@@ -114,6 +115,36 @@ class AuthContextAuthenticatorTest {
         verify(authenticationSession, never()).setAuthNote(eq(AUTH_CONTEXT_HASH), any());
         verify(flowSession, never()).singleUseObjects();
         verify(context).success();
+    }
+
+    @Test
+    void aTokenTheEngineRejectsIsForgotten() throws Exception {
+        // The token is reused across logins until shortly before it expires;
+        // one the engine rejects must not be.
+        when(response.getStatus()).thenReturn(401);
+
+        authenticate();
+
+        serviceAccounts.verify(() -> ServiceAccountService.forgetToken("token"));
+        verify(context).success();
+    }
+
+    @Test
+    void aTokenTheEngineCannotVerifyIsForgotten() throws Exception {
+        when(response.getStatus()).thenReturn(403);
+
+        authenticate();
+
+        serviceAccounts.verify(() -> ServiceAccountService.forgetToken("token"));
+    }
+
+    @Test
+    void anotherEngineErrorKeepsTheToken() throws Exception {
+        when(response.getStatus()).thenReturn(500);
+
+        authenticate();
+
+        serviceAccounts.verify(() -> ServiceAccountService.forgetToken(anyString()), never());
     }
 
     @Test

@@ -105,10 +105,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                     .auth(serviceAccountToken.get())
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
-                log.error("fetchAdaptiveMFAParameters: httpResponse={}", httpResponse);
-                return createErrorResponse(Response.Status.BAD_GATEWAY,
-                        "AMFA engine returned HTTP " + httpResponse.getStatus()
-                                + ": " + httpResponse.asString());
+                return engineError("fetchAdaptiveMFAParameters", httpResponse, serviceAccountToken.get());
             }
             return Response.ok(httpResponse.asJson(), MediaType.APPLICATION_JSON_TYPE).build();
         } catch (IOException e) {
@@ -150,10 +147,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                     .json(parametersNode)
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
-                log.error("updateAdaptiveMFAParameters: httpResponse={}", httpResponse);
-                return createErrorResponse(Response.Status.BAD_GATEWAY,
-                        "AMFA engine returned HTTP " + httpResponse.getStatus()
-                                + ": " + httpResponse.asString());
+                return engineError("updateAdaptiveMFAParameters", httpResponse, serviceAccountToken.get());
             }
             return Response.ok(httpResponse.asJson(), MediaType.APPLICATION_JSON_TYPE).build();
         } catch (IOException e) {
@@ -220,10 +214,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                     .auth(serviceAccountToken.get())
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
-                log.error("fetchScoringConfig: httpResponse={}", httpResponse);
-                return createErrorResponse(Response.Status.BAD_GATEWAY,
-                        "AMFA engine returned HTTP " + httpResponse.getStatus()
-                                + ": " + httpResponse.asString());
+                return engineError("fetchScoringConfig", httpResponse, serviceAccountToken.get());
             }
             return Response.ok(httpResponse.asJson(), MediaType.APPLICATION_JSON_TYPE).build();
         } catch (IOException e) {
@@ -258,10 +249,7 @@ public class AmfaResourceProvider implements RealmResourceProvider {
                     .json(objectMapper.valueToTree(config))
                     .asResponse();
             if (httpResponse.getStatus() >= 300) {
-                log.error("updateScoringConfig: httpResponse={}", httpResponse);
-                return createErrorResponse(Response.Status.BAD_GATEWAY,
-                        "AMFA engine returned HTTP " + httpResponse.getStatus()
-                                + ": " + httpResponse.asString());
+                return engineError("updateScoringConfig", httpResponse, serviceAccountToken.get());
             }
             return Response.ok(httpResponse.asJson(), MediaType.APPLICATION_JSON_TYPE).build();
         } catch (IOException e) {
@@ -280,6 +268,21 @@ public class AmfaResourceProvider implements RealmResourceProvider {
      * or at a URL with no host, and the page only learned that the engine answered 401
      * or could not be reached.
      */
+    /**
+     * The admin page's answer when the engine answers an error. The token is reused
+     * across calls until shortly before it expires, so one the engine rejects
+     * is dropped and the next call asks Keycloak for a fresh one.
+     */
+    private Response engineError(String operation, SimpleHttpResponse httpResponse, String token) throws IOException {
+        log.error("{}: httpResponse={}", operation, httpResponse);
+        if (ServiceAccountService.rejectsToken(httpResponse.getStatus())) {
+            ServiceAccountService.forgetToken(token);
+        }
+        return createErrorResponse(Response.Status.BAD_GATEWAY,
+                "AMFA engine returned HTTP " + httpResponse.getStatus()
+                        + ": " + httpResponse.asString());
+    }
+
     private Either<Response, String> engineToken(String operation) {
         RealmModel realm = session.getContext().getRealm();
         String endpoint = realm.getAttribute(AdaptiveAuthUtils.ADAPTIVE_AUTH_ENDPOINT);

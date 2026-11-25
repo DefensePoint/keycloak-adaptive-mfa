@@ -47,9 +47,11 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
@@ -112,6 +114,7 @@ class AmfaResourceProviderTest {
         serviceAccounts = mockStatic(ServiceAccountService.class);
         serviceAccounts.when(() -> ServiceAccountService.requestServiceAccountToken(any(), any(), anyString()))
                 .thenReturn("token");
+        serviceAccounts.when(() -> ServiceAccountService.rejectsToken(anyInt())).thenCallRealMethod();
 
         httpClient = mock(CloseableHttpClient.class);
         HttpClientProvider provider = mock(HttpClientProvider.class);
@@ -223,6 +226,43 @@ class AmfaResourceProviderTest {
         for (HttpUriRequest request : sent.getAllValues()) {
             assertEquals("Bearer token", request.getFirstHeader("Authorization").getValue());
         }
+    }
+
+    private void engineAnswers(int status) throws Exception {
+        when(httpClient.execute(any(HttpUriRequest.class))).thenAnswer(i -> {
+            Answer answer = new Answer();
+            answer.setStatusCode(status);
+            answer.setEntity(new StringEntity("{\"detail\":\"x\"}"));
+            return answer;
+        });
+    }
+
+    /** The token is reused across calls until shortly before it expires; one the engine rejects must not be. */
+    @Test
+    void everyEngineCallForgetsATokenTheEngineRejects() throws Exception {
+        engineAnswers(401);
+
+        callEveryEngineProxy();
+
+        serviceAccounts.verify(() -> ServiceAccountService.forgetToken("token"), times(4));
+    }
+
+    @Test
+    void everyEngineCallForgetsATokenTheEngineCannotVerify() throws Exception {
+        engineAnswers(403);
+
+        callEveryEngineProxy();
+
+        serviceAccounts.verify(() -> ServiceAccountService.forgetToken("token"), times(4));
+    }
+
+    @Test
+    void anotherEngineErrorKeepsTheToken() throws Exception {
+        engineAnswers(500);
+
+        callEveryEngineProxy();
+
+        serviceAccounts.verify(() -> ServiceAccountService.forgetToken(anyString()), never());
     }
 
     @Test

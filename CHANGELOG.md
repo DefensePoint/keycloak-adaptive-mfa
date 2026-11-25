@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The service account token is reused until shortly before it expires,
+  instead of being fetched from Keycloak for every engine call. Every login
+  asked Keycloak's token endpoint for a fresh token twice, over HTTP (in the
+  auth-context and decision steps), and every admin page call once more, so a
+  busy Keycloak got that token work on top of the logins: under load the token
+  requests timed out and the engine was called without a token. A token is now
+  kept per realm, client, token endpoint address and client secret, used until
+  30 seconds before its expiry, and replaced by one request while the others
+  keep using it; a rotated secret gets a new token, and one the engine rejects
+  (HTTP 401 or 403, as after a signing key rotation) is dropped. Each Keycloak
+  node keeps its own tokens.
 - A login the engine rate-limits steps up instead of taking the realm's
   fallback level. The engine answers a user's `/decision` requests over its
   rate limit with 429, and the plugin handled that like an outage: the login
