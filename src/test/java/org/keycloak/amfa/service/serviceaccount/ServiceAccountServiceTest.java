@@ -54,6 +54,8 @@ class ServiceAccountServiceTest {
         provider = mock(HttpClientProvider.class);
         ClientModel client = mock(ClientModel.class);
         when(client.getSecret()).thenReturn("secret");
+        when(client.isEnabled()).thenReturn(true);
+        when(client.isServiceAccountsEnabled()).thenReturn(true);
         when(realm.getClientByClientId("adaptive-auth-api")).thenReturn(client);
         when(realm.getName()).thenReturn("demo");
         when(provider.getMaxConsumedResponseSize()).thenReturn(HttpClientProvider.DEFAULT_MAX_CONSUMED_RESPONSE_SIZE);
@@ -195,6 +197,8 @@ class ServiceAccountServiceTest {
 
         ClientModel rotated = mock(ClientModel.class);
         when(rotated.getSecret()).thenReturn("rotated-secret");
+        when(rotated.isEnabled()).thenReturn(true);
+        when(rotated.isServiceAccountsEnabled()).thenReturn(true);
         when(realm.getClientByClientId("adaptive-auth-api")).thenReturn(rotated);
 
         assertEquals("t2", ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
@@ -223,5 +227,56 @@ class ServiceAccountServiceTest {
 
         assertThrows(ServiceAccountNotConfiguredException.class,
                 () -> ServiceAccountService.requestServiceAccountToken(realm, session, "adaptive-auth-api"));
+    }
+
+    /**
+     * A cached token outlives a change to its client. Disabling the client, or its
+     * service account, must stop the token being used at once, as it did when every
+     * call asked Keycloak for a new one.
+     */
+    @Test
+    void aDisabledClientGetsNoTokenEvenWithOneCached() throws Exception {
+        int[] requests = tokenEndpointAnswering(300);
+        keycloakAt("http://disabled.test");
+        ClientModel client = realm.getClientByClientId("adaptive-auth-api");
+        assertEquals("t1", ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+
+        when(client.isEnabled()).thenReturn(false);
+
+        assertNull(ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+        ServiceAccountNotConfiguredException e = assertThrows(ServiceAccountNotConfiguredException.class,
+                () -> ServiceAccountService.requestServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals("client 'adaptive-auth-api' is disabled", e.getMessage());
+        assertEquals(1, requests[0]);
+    }
+
+    @Test
+    void aClientWithoutItsServiceAccountGetsNoTokenEvenWithOneCached() throws Exception {
+        tokenEndpointAnswering(300);
+        keycloakAt("http://no-service-account.test");
+        ClientModel client = realm.getClientByClientId("adaptive-auth-api");
+        ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api");
+
+        when(client.isServiceAccountsEnabled()).thenReturn(false);
+
+        assertNull(ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+        ServiceAccountNotConfiguredException e = assertThrows(ServiceAccountNotConfiguredException.class,
+                () -> ServiceAccountService.requestServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals("client 'adaptive-auth-api' has service accounts disabled", e.getMessage());
+    }
+
+    @Test
+    void aReEnabledClientUsesItsStillValidToken() throws Exception {
+        int[] requests = tokenEndpointAnswering(300);
+        keycloakAt("http://re-enabled.test");
+        ClientModel client = realm.getClientByClientId("adaptive-auth-api");
+        ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api");
+        when(client.isEnabled()).thenReturn(false);
+        ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api");
+
+        when(client.isEnabled()).thenReturn(true);
+
+        assertEquals("t1", ServiceAccountService.getServiceAccountToken(realm, session, "adaptive-auth-api"));
+        assertEquals(1, requests[0]);
     }
 }

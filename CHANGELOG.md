@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept per realm, client, token endpoint address and client secret, used until
   30 seconds before its expiry, and replaced by one request while the others
   keep using it; a rotated secret gets a new token, and one the engine rejects
-  (HTTP 401 or 403, as after a signing key rotation) is dropped. Each Keycloak
-  node keeps its own tokens.
+  (HTTP 401 or 403, as after a signing key rotation) is dropped. A cached token
+  stops being used as soon as its client, or the client's service account, is
+  disabled. Each Keycloak node keeps its own tokens.
 - A login the engine rate-limits steps up instead of taking the realm's
   fallback level. The engine answers a user's `/decision` requests over its
   rate limit with 429, and the plugin handled that like an outage: the login

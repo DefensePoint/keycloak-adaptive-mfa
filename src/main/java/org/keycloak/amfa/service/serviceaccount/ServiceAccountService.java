@@ -71,6 +71,15 @@ public class ServiceAccountService {
         if (clientSecret == null || clientSecret.isEmpty()) {
             throw new ServiceAccountNotConfiguredException("client '" + clientId + "' has no secret");
         }
+        // Checked on every call, not only when a token is fetched: a cached token
+        // must stop being used as soon as its client, or the client's service
+        // account, is switched off, as it did when every call fetched a new one.
+        if (!client.isEnabled()) {
+            throw new ServiceAccountNotConfiguredException("client '" + clientId + "' is disabled");
+        }
+        if (!client.isServiceAccountsEnabled()) {
+            throw new ServiceAccountNotConfiguredException("client '" + clientId + "' has service accounts disabled");
+        }
 
         // Build the token endpoint URL using the Keycloak base URI. The base
         // URI has no trailing slash when the realm sets a frontendUrl, so
