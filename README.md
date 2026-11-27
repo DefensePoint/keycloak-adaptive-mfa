@@ -12,6 +12,10 @@ This is one of three repositories that make up the full AMFA system:
 | [**keycloak-adaptive-mfa**](https://github.com/DefensePoint/keycloak-adaptive-mfa) (this repo) | Java | Keycloak SPI plugin — authenticator that calls the engine |
 | [keycloak-adaptive-mfa-admin-ui](https://github.com/DefensePoint/keycloak-adaptive-mfa-admin-ui) | TypeScript | Keycloak Admin UI extension — AMFA configuration pages |
 
+## Hosted demo
+
+A hosted demo of Adaptive MFA is available. You can register a test user in a Keycloak realm protected by Adaptive MFA, change the realm's Adaptive MFA settings in the admin console with a shared realm admin login, and follow the logins in the Keycloak Monitoring Tool. The logins and what to try are in the [hosted demo section of the Keycloak Monitoring Tool README](https://github.com/DefensePoint/keycloak-monitoring#hosted-demo).
+
 ## Features
 
 - **Adaptive Auth Authenticator** — calls the AMFA engine, enforces step-up MFA based on ACR decision
